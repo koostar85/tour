@@ -75,6 +75,13 @@ body {
     animation: slideInUp 0.8s ease;
 }
 
+.button-group {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
 .cta-button {
     background-color: #f39c12;
     color: white;
@@ -89,6 +96,14 @@ body {
 .cta-button:hover {
     background-color: #e67e22;
     transform: scale(1.05);
+}
+
+.cta-button.secondary {
+    background-color: #3498db;
+}
+
+.cta-button.secondary:hover {
+    background-color: #2980b9;
 }
 
 /* Tours Section */
@@ -153,6 +168,62 @@ body {
 
 .tour-card button:hover {
     background-color: #2980b9;
+}
+
+/* Featured Section - World Clock */
+.featured-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 60px 0;
+    text-align: center;
+}
+
+.featured-section h2 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: white;
+}
+
+.featured-section p {
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    opacity: 0.9;
+}
+
+.featured-clocks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.mini-clock-card {
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.mini-clock-card:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.8);
+    transform: translateY(-3px);
+}
+
+.mini-timezone {
+    font-size: 0.9rem;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    opacity: 0.9;
+}
+
+.mini-clock {
+    font-size: 1.5rem;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
 }
 
 /* About Section */
@@ -277,9 +348,30 @@ footer {
         font-size: 1rem;
     }
 
+    .button-group {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .cta-button {
+        width: 100%;
+        max-width: 300px;
+    }
+
     .tours h2,
     .about h2,
-    .contact h2 {
+    .contact h2,
+    .featured-section h2 {
         font-size: 1.8rem;
+    }
+
+    .featured-clocks {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .featured-clocks {
+        grid-template-columns: 1fr;
     }
 }

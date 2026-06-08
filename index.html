@@ -13,6 +13,7 @@
             <ul class="nav-links">
                 <li><a href="#home">홈</a></li>
                 <li><a href="#tours">투어</a></li>
+                <li><a href="#clock">시계</a></li>
                 <li><a href="#about">소개</a></li>
                 <li><a href="#contact">연락처</a></li>
             </ul>
@@ -24,7 +25,10 @@
             <div class="hero-content">
                 <h1>세계를 탐험하세요</h1>
                 <p>최고의 여행 가이드와 함께 새로운 경험을 만들어보세요</p>
-                <button class="cta-button">투어 시작하기</button>
+                <div class="button-group">
+                    <button class="cta-button">투어 시작하기</button>
+                    <button class="cta-button secondary" onclick="window.location.href='clock.html'">🕐 세계 시간 보기</button>
+                </div>
             </div>
         </div>
     </section>
@@ -34,19 +38,19 @@
             <h2>인기 투어</h2>
             <div class="tours-grid">
                 <div class="tour-card">
-                    <img src="https://via.placeholder.com/300x200" alt="도시 투어">
+                    <img src="https://via.placeholder.com/300x200?text=City+Tour" alt="도시 투어">
                     <h3>도시 투어</h3>
                     <p>주요 도시의 문화유산과 현대 건축을 둘러보세요</p>
                     <button>더 알아보기</button>
                 </div>
                 <div class="tour-card">
-                    <img src="https://via.placeholder.com/300x200" alt="자연 투어">
+                    <img src="https://via.placeholder.com/300x200?text=Nature+Tour" alt="자연 투어">
                     <h3>자연 투어</h3>
                     <p>아름다운 자연 경관과 야생동물을 체험해보세요</p>
                     <button>더 알아보기</button>
                 </div>
                 <div class="tour-card">
-                    <img src="https://via.placeholder.com/300x200" alt="음식 투어">
+                    <img src="https://via.placeholder.com/300x200?text=Food+Tour" alt="음식 투어">
                     <h3>음식 투어</h3>
                     <p>지역의 맛있는 음식과 문화를 경험해보세요</p>
                     <button>더 알아보기</button>
@@ -55,10 +59,36 @@
         </div>
     </section>
 
+    <section id="clock" class="featured-section">
+        <div class="container">
+            <h2>🌐 세계 시간 확인</h2>
+            <p>전 세계 주요 도시의 현재 시간을 확인하세요</p>
+            <div class="featured-clocks">
+                <div class="mini-clock-card">
+                    <div class="mini-timezone">뉴욕</div>
+                    <div class="mini-clock" id="mini-ny">00:00</div>
+                </div>
+                <div class="mini-clock-card">
+                    <div class="mini-timezone">런던</div>
+                    <div class="mini-clock" id="mini-london">00:00</div>
+                </div>
+                <div class="mini-clock-card">
+                    <div class="mini-timezone">도쿄</div>
+                    <div class="mini-clock" id="mini-tokyo">00:00</div>
+                </div>
+                <div class="mini-clock-card">
+                    <div class="mini-timezone">시드니</div>
+                    <div class="mini-clock" id="mini-sydney">00:00</div>
+                </div>
+            </div>
+            <button class="cta-button" onclick="window.location.href='clock.html'">전체 세계 시간 보기</button>
+        </div>
+    </section>
+
     <section id="about" class="about">
         <div class="container">
             <h2>소개</h2>
-            <p>Tour는 세계 곳곳의 최고의 여행지를 소개하고 맞춤형 여행 계획을 도와드립니다.</p>
+            <p>Tour는 세계 곳곳의 최고의 여행지를 소개하고 맞춤형 여행 계획을 도와드립니다. 또한 전 세계 시간을 실시간으로 확인하여 국제 여행 시 시간대를 쉽게 파악할 수 있습니다.</p>
         </div>
     </section>
 
@@ -78,5 +108,7 @@
             <p>&copy; 2026 Tour. All rights reserved.</p>
         </div>
     </footer>
+
+    <script src="main.js"></script>
 </body>
 </html>
