@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="utf-8">
-    <title>Gemini AI 연동 GIS - 관광지 클러스터맵</title>
+    <title>대한민국 관광지 & 축제 검색 - Gemini GIS</title>
     <script src="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -22,6 +22,14 @@
         .ai-btn:hover { background: #1557b0; }
         .status-box { font-size: 12px; color: #666; max-height: 100px; overflow-y: auto; }
         .api-key-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+        
+        /* 범례(Legend) 스타일 추가 */
+        .legend {
+            position: absolute; bottom: 30px; right: 20px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 5px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4); font-size: 12px; line-height: 18px;
+        }
+        .legend-key { display: inline-block; border-radius: 50%; width: 10px; height: 10px; margin-right: 5px; }
     </style>
 </head>
 <body>
@@ -29,19 +37,26 @@
 <div id="map"></div>
 
 <div class="ai-container">
-    <h3>🪄 Gemini GIS 관광지 검색</h3>
+    <h3>🪄 Gemini GIS 통합 검색</h3>
     <div class="input-group">
-        <input type="text" id="gis-command" class="ai-input" placeholder="예: 전라남도에 있는 관광지만 보여줘">
+        <input type="text" id="gis-command" class="ai-input" placeholder="예: 경기도에 있는 축제만 필터링해줘">
         <button id="send-btn" class="ai-btn">요청</button>
     </div>
-    <div id="status" class="status-box">명령을 입력하세요 (관광지 전용 클러스터맵).</div>
+    <div id="status" class="status-box">명령을 입력하세요 (관광지/축제 통합 클러스터맵).</div>
     <div class="api-key-section">
         <input type="password" id="gemini-key" class="ai-input" placeholder="Gemini API Key 입력">
     </div>
 </div>
 
+<div class="legend">
+    <h4>구분</h4>
+    <div><span class="legend-key" style="background-color: #007cbf;"></span>관광지</div>
+    <div><span class="legend-key" style="background-color: #ff5252;"></span>축제</div>
+    <div><span class="legend-key" style="background-color: #51bbd6;"></span>클러스터 (군집)</div>
+</div>
+
 <script>
-    // 1. OSM 배경 지도 초기화
+    // 1. OpenStreetMap 배경 지도 설정
     const map = new maplibreGl.Map({
         container: 'map',
         style: {
@@ -56,49 +71,48 @@
             },
             "layers": [{ "id": "osm-layer", "type": "raster", "source": "osm-tiles" }]
         },
-        center: [127.9780, 36.5665],
+        center: [127.9780, 36.5665], // 대한민국 중심 좌표
         zoom: 7
     });
 
     map.on('load', () => {
-        // 2. Tippecanoe 벡터 타일 소스 추가 
-        // (클라이언트 사이드 클러스터링을 위해 cluster: true 옵션을 적용합니다)
+        // 2. Tippecanoe MVT 벡터 타일 소스 추가 (관광지, 축제 데이터 모두 포함)
         map.addSource('my-gis-data', {
             type: 'vector',
-            tiles: ['https://your-cloudfront-id.cloudfront.net/my_tiles/{z}/{x}/{y}.pbf'], // 본인 경로로 수정
+            // ⚠️ 본인의 실제 서버리스 MVT 타일(.pbf) 경로로 수정하셔야 합니다.
+            tiles: ['https://your-cloudfront-id.cloudfront.net/my_tiles/{z}/{x}/{y}.pbf'], 
             minzoom: 5,
             maxzoom: 15,
-            cluster: true,            // 클러스터링 활성화
-            clusterMaxZoom: 14,       // 이 줌 레벨 미만까지만 군집화 수행
-            clusterRadius: 50         // 군집화할 반경 픽셀 범위
+            cluster: true,            // 클러스터링 활성화 (관광지+축제 통합 군집화)
+            clusterMaxZoom: 13,       // 줌 13까지만 뭉치고 14부터는 해제되어 낱개로 보임
+            clusterRadius: 60         // 뭉칠 반경 범위 (픽셀)
         });
 
-        // 3. 레이어 구성 A: 클러스터 원형 마커 (여러 개 뭉쳐있는 그룹)
+        // 3. 레이어 A: 클러스터 원형 마커 (데이터가 모여있는 덩어리)
         map.addLayer({
             id: 'clusters',
             type: 'circle',
             source: 'my-gis-data',
             'source-layer': 'locations',
-            // 'type'이 '관광지'인 데이터만 클러스터링 레이어에 참여하도록 기본 필터 설정
-            filter: ['has', 'point_count'], 
+            filter: ['has', 'point_count'], // 군집된 데이터만 대상
             paint: {
-                // 관광지 개수에 따라 클러스터 마커 색상과 크기 차등 부여
+                // 내부에 포함된 총 개수(관광지+축제 합산)에 따라 색상과 크기 변경
                 'circle-color': [
                     'step', ['get', 'point_count'],
-                    '#51bbd6', 10,   // 10개 미만: 하늘색
-                    '#f1f075', 50,   // 50개 미만: 노란색
-                    '#f28cb1'        // 50개 이상: 분홍색
+                    '#51bbd6', 20,   // 20개 미만: 하늘색
+                    '#f1f075', 100,  // 100개 미만: 노란색
+                    '#f28cb1'        // 100개 이상: 분홍색
                 ],
                 'circle-radius': [
                     'step', ['get', 'point_count'],
-                    18, 10,          // 10개 미만 크기 18px
-                    24, 50,          // 50개 미만 크기 24px
-                    30               // 50개 이상 크기 30px
+                    18, 20,          
+                    24, 100,         
+                    30               
                 ]
             }
         });
 
-        // 4. 레이어 구성 B: 클러스터 내부 숫자 텍스트 표시
+        // 4. 레이어 B: 클러스터 내부 숫자 표시
         map.addLayer({
             id: 'cluster-count',
             type: 'symbol',
@@ -112,54 +126,68 @@
             }
         });
 
-        // 5. 레이어 구성 C: 개별 관광지 마커 (줌인해서 낱개로 쪼개졌을 때 모양)
+        // 5. 레이어 C: 낱개 마커 개별 표출 (관광지와 축제를 색상으로 분기)
         map.addLayer({
             id: 'unclustered-point',
             type: 'circle',
             source: 'my-gis-data',
             'source-layer': 'locations',
-            filter: ['all', ['!', ['has', 'point_count']], ['==', 'type', '관광지']], // 낱개이면서 '관광지'인 것만
+            filter: ['!', ['has', 'point_count']], // 군집되지 않은 낱개 데이터만 대상
             paint: {
-                'circle-color': '#007cbf', // 관광지 고유 색상 (파란색)
+                // 속성의 'type' 값을 읽어와서 관광지는 파란색, 축제는 빨간색으로 매핑
+                'circle-color': [
+                    'match', ['get', 'type'],
+                    '관광지', '#007cbf',
+                    '축제', '#ff5252',
+                    '#ccc' // 예외 상황 대비 기본값 회색
+                ],
                 'circle-radius': 7,
                 'circle-stroke-width': 1,
                 'circle-stroke-color': '#fff'
             }
         });
 
-        // 6. 인터랙션: 클러스터 클릭 시 줌인 확대 효과
+        // 6. 인터랙션: 클러스터 클릭 시 해당 영역으로 확대(Zoom In)
         map.on('click', 'clusters', (e) => {
             const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
             const clusterId = features[0].properties.cluster_id;
-            
-            // MapLibre 내부 확장 줌 레벨 가져오기 구조 호출
             map.getSource('my-gis-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
                 if (err) return;
-                map.easeTo({
-                    center: features[0].geometry.coordinates,
-                    zoom: zoom + 0.5
-                });
+                map.easeTo({ center: features[0].geometry.coordinates, zoom: zoom + 0.5 });
             });
         });
 
-        // 7. 인터랙션: 개별 관광지 마커 클릭 시 팝업창 표출
+        // 7. 인터랙션: 개별 마커 클릭 시 속성에 맞는 상세 팝업창 표출
         map.on('click', 'unclustered-point', (e) => {
             const props = e.features[0].properties;
+            
+            // 축제 데이터일 경우 시작/종료일 정보 추가 표시 처리
+            let dateInfo = '';
+            if (props.type === '축제' && props.start_date) {
+                dateInfo = `<p><b>기간:</b> ${props.start_date} ~ ${props.end_date}</p>`;
+            }
+
             new maplibreGl.Popup()
                 .setLngLat(e.lngLat)
-                .setHTML(`<h3>📌 ${props.title}</h3><p><b>위치:</b> ${props.city}</p><p><b>주소:</b> ${props.address}</p>`)
+                .setHTML(`
+                    <h3>[${props.type}] ${props.title}</h3>
+                    <p><b>지역:</b> ${props.city}</p>
+                    <p><b>주소:</b> ${props.address}</p>
+                    ${dateInfo}
+                `)
                 .addTo(map);
         });
 
-        // 마우스 커서 스타일 변경
+        // 마우스 커서 인터랙션 정의
         map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
         map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'unclustered-point', () => { map.getCanvas().style.cursor = ''; });
     });
 
-    // 8. 제미나이 AI 연동 및 동적 필터 처리
+    // 8. 제미나이 AI 연동 및 프롬프트 결과 맵 필터 적용
     document.getElementById('send-btn').addEventListener('click', processAiCommand);
+    document.getElementById('gis-command').addEventListener('keypress', (e) => { if(e.key === 'Enter') processAiCommand(); });
     
     async function processAiCommand() {
         const command = document.getElementById('gis-command').value;
@@ -172,22 +200,28 @@
         statusEl.innerText = "Gemini 분석 중...";
 
         const systemInstruction = `
-        너는 웹 지도(MapLibre GL JS)의 클러스터 레이어 필터를 제어하는 GIS 어시스턴트야.
-        사용자의 요구사항을 분석해서 해당 지역이나 조건에 맞는 필터 규칙(JSON 데이터)만 정확히 반환해야 해.
+        너는 웹 지도(MapLibre GL JS)의 필터링 규칙을 생성하는 스마트 GIS 어시스턴트야.
+        사용자의 요구사항을 파악해서 데이터 필터 규칙(JSON 데이터)만 정확히 반환해야 해.
         
-        [중요 사항]
-        - 이 지도는 '관광지' 데이터만 전용으로 표현하는 클러스터 맵이야. 따라서 기본 조건으로 type = '관광지'가 상시 유지되거나 반영되어야 해.
-        - 데이터 속성 정의 정보:
-          * city: '서울', '강원도', '전라남도', '경상남도', '제주도', '경기도', '대구', '부산' 등 (사용자가 '전남'이라고 하면 '전라남도'로 매핑할 것)
+        [데이터 명세]
+        - type: '관광지' 또는 '축제'
+        - city: '서울', '강원도', '전라남도', '경상남도', '제주도', '경기도', '대구', '부산' 등
         
-        결과는 반드시 아래의 순수한 JSON 포맷으로만 대답해줘. 다른 텍스트나 마크다운(\`\`\`) 표현은 절대 허용하지 마.
-        {
-          "filter": ["all", ["==", "type", "관광지"], ["==", "city", "전라남도"]],
-          "center": [126.4622, 34.8160],
-          "zoom": 9,
-          "message": "전라남도 지역의 관광지 클러스터만 필터링합니다."
-        }
-        만약 '전체 다 보여줘'라고 하면 filter 조건을 ["==", "type", "관광지"] 로 설정하고 center는 대한민국 중심[127.9780, 36.5665], zoom은 7로 설정해줘.
+        사용자의 질문 유형에 맞춰 복합적인 MapLibre GL JS용 ['all', ...] 필터 쿼리를 조합해줘.
+        
+        예시 1) "서울에 있는 축제만 보여줘"
+        { "filter": ["all", ["==", "type", "축제"], ["==", "city", "서울"]], "center": [126.9780, 37.5665], "zoom": 11, "message": "서울 지역의 축제만 필터링합니다." }
+        
+        예시 2) "제주도 관광지 찾아줘"
+        { "filter": ["all", ["==", "type", "관광지"], ["==", "city", "제주도"]], "center": [126.5312, 33.3616], "zoom": 10, "message": "제주도의 관광지 정보를 필터링합니다." }
+
+        예시 3) "강원도 전부 다 보여줘" (타입 구분 없이 특정 지역 전체인 경우)
+        { "filter": ["==", "city", "강원도"], "center": [128.1555, 37.8228], "zoom": 9, "message": "강원도 전체 데이터를 보여줍니다." }
+        
+        예시 4) "전체 다 보여줘" 또는 "초기화해줘"
+        { "filter": null, "center": [127.9780, 36.5665], "zoom": 7, "message": "전체 데이터를 화면에 표시합니다." }
+
+        출력은 반드시 마크다운(\`\`\`) 없이 순수한 JSON 포맷 한 덩어리만 반환해줘. 설명텍스트는 절대 금지야.
         `;
 
         try {
@@ -201,33 +235,11 @@
 
             const resData = await response.json();
             let aiResponseText = resData.candidates[0].content.parts[0].text.trim();
-            aiResponseText = aiResponseText.replace(/```json|```/g, ''); // 방어 코드
+            aiResponseText = aiResponseText.replace(/```json|```/g, ''); // 텍스트 정제 방어코드
             
             const result = JSON.parse(aiResponseText);
             statusEl.innerText = `결과: ${result.message}`;
             
-            // 9. 제미나이 필터 규칙을 지도 레이어에 각각 적용
-            if (map.getLayer('clusters')) {
-                // 클러스터 덩어리는 내부 카운트('point_count')가 있으면서 제미나이가 준 필터 조건(도시 등)을 만족해야 함
-                // 여기서는 유동적인 필터 결합을 위해 전역 세팅을 변경하거나, 낱개 포인트 필터를 업데이트합니다.
-                const combinedFilter = ["all", result.filter, ["has", "point_count"]];
-                map.setFilter('clusters', combinedFilter);
-                map.setFilter('cluster-count', combinedFilter);
-            }
-            if (map.getLayer('unclustered-point')) {
-                // 낱개 포인트는 point_count가 없으면서 제미나이의 필터 조건을 만족해야 함
-                const combinedPointFilter = ["all", result.filter, ["!", ["has", "point_count"]]];
-                map.setFilter('unclustered-point', combinedPointFilter);
-            }
-            
-            // 지도 시점 이동
-            map.flyTo({ center: result.center, zoom: result.zoom, essential: true });
-
-        } catch (error) {
-            console.error(error);
-            statusEl.innerText = "에러 발생: 올바른 명령 형식이 아니거나 API 키를 확인하세요.";
-        }
-    }
-</script>
-</body>
-</html>
+            // 9. 제미나이가 도출한 필터를 클러스터 및 낱개 레이어에 동시 바인딩
+            if (result.filter === null) {
+                // 전체 데이터 표시 모드일 때
