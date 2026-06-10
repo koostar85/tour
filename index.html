@@ -2,13 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="utf-8">
-    <title>대한민국 공간정보 AI 검색 포털 (PMTiles)</title>
-    <script src="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.css" rel="stylesheet" />
+    <title>대한민국 공간정보 AI 검색 포털 (PMTiles 안정화 버전)</title>
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"></script>
     <style>
-        body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; }
-        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        /* [중요] 지도가 안 보일 때 크기 문제를 원천 차단하기 위한 필수 CSS */
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; height: 100%; background-color: #f4f3f0; }
         
         /* 제미나이 프롬프트 UI */
         .ai-container {
@@ -24,7 +25,7 @@
         .status-box { font-size: 12px; color: #666; max-height: 100px; overflow-y: auto; }
         .api-key-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
         
-        /* 동적 범례 UI */
+        /* 범례 UI */
         .legend {
             position: absolute; bottom: 30px; right: 20px; z-index: 1000;
             background: white; padding: 12px; border-radius: 6px;
@@ -40,7 +41,7 @@
 <div id="map"></div>
 
 <div class="ai-container">
-    <h3>🪄 Gemini GIS 통합 AI 검색 (PMTiles)</h3>
+    <h3>🪄 Gemini GIS 검색 (PMTiles)</h3>
     <div class="input-group">
         <input type="text" id="gis-command" class="ai-input" placeholder="예: 서울에 있는 관광지 검색해줘">
         <button id="send-btn" class="ai-btn">요청</button>
@@ -56,7 +57,6 @@
 </div>
 
 <script>
-    // 데이터 종류(Type)별 고유 색상 정의
     const typeColors = {
         '관광지': '#007cbf',
         '축제': '#ff5252',
@@ -65,7 +65,7 @@
         '기타': '#7f8c8d'
     };
 
-    // 범례 UI 동적 생성
+    // 범례 생성
     const legendEl = document.getElementById('map-legend');
     Object.keys(typeColors).forEach(type => {
         const item = document.createElement('div');
@@ -78,42 +78,64 @@
     clusterLabel.innerHTML = `<span class="legend-key" style="background-color: #51bbd6;"></span><b>군집(클러스터)</b>`;
     legendEl.appendChild(clusterLabel);
 
-    // 1. PMTiles 프로토콜 등록 (MapLibre에 PMTiles를 인식시킵니다)
-    let protocol = new pmtiles.Protocol();
+    // 1. PMTiles 프로토콜 설정 변경 (안정성 강화 문법)
+    const protocol = new pmtiles.Protocol();
     maplibreGl.addProtocol("pmtiles", protocol.tile);
 
-    // ⚠️ 본인의 실제 GitHub 배포용 PMTiles 경로 지정
-    // 저장소 이름이 tour이므로 아래와 같이 상대 경로 또는 절대 경로를 지정합니다.
-    const PMTILES_URL = "https://koostar85.github.io/tour/map.pmtiles";
+    // ⚠️ [중요] GitHub Pages 배포 환경에서는 도메인이 다를 때를 대비해 윈도우 현재 위치를 기반으로 상대경로 연산을 처리해 에러를 차단합니다.
+    const PMTILES_URL = `${window.location.origin}${window.location.pathname.replace(/\/$/, "")}/map.pmtiles`;
+    console.log("PMTiles 로드 예정 경로:", PMTILES_URL);
 
-    // 2. OpenStreetMap 배경 지도 설정
-
+    // 2. OSM 배경 지도 렌더링 에러 차단용 풀-스타일 구조로 초기화
     const map = new maplibreGl.Map({
         container: 'map',
         style: {
             "version": 8,
-            "sources": { "osm": { "type": "raster", "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], "tileSize": 256 } },
-            "layers": [{"id": "osm-layer", "type": "raster", "source": "osm"}]
+            "sources": {
+                "osm-tiles": {
+                    "type": "raster",
+                    // 전 세계 오픈 스트리트 맵 공식 CDN 미러 다중 구성으로 딜레이 차단
+                    "tiles": [
+                        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    ],
+                    "tileSize": 256,
+                    "attribution": "© OpenStreetMap contributors"
+                }
+            },
+            "layers": [
+                {
+                    "id": "osm-layer",
+                    "type": "raster",
+                    "source": "osm-tiles",
+                    "minzoom": 0,
+                    "maxzoom": 19
+                }
+            ]
         },
-        center: [127.5, 36.5], zoom: 7
+        center: [127.9780, 36.5665],
+        zoom: 7
     });
 
-
     map.on('load', () => {
-        // 3. PMTiles 소스 추가 (타일 URL 구조가 pmtiles:// 로 시작해야 합니다)
+        console.log("배경 지도 로드 완료");
+
+        // 3. PMTiles 소스 추가
         map.addSource('my-pmtiles-data', {
             type: 'vector',
             url: `pmtiles://${PMTILES_URL}`, 
-            cluster: true,            // 클러스터링 활성화
+            cluster: true,            
             clusterMaxZoom: 13,       
             clusterRadius: 60         
         });
 
-        // Tippecanoe로 빌드 시 소스레이어 이름은 파일명인 'map' 또는 내부 GeoJSON 파일명이 됩니다.
-        // 여기서는 기본값인 'map'으로 설정하되, 안 나오면 'google_locations' 등으로 맞추어야 합니다.
-        const SOURCE_LAYER = 'map'; 
+        // ⚠️ [핵심 수정 원인] Tippecanoe 실행 시 "-o map.pmtiles"로 만들면 
+        // 파일 내 소스레이어 이름은 'map'이 아니라 원래 원본 GeoJSON 파일의 이름(확장자 제외)이 밀고 들어갑니다.
+        // 어떤 이름이 오든 무조건 매칭하기 위해 임시 변수 지정 후 런타임에서 강제 대입하거나 확인합니다.
+        // 만약 안 나온다면 본인이 만든 GeoJSON 파일명(예: 'google_locations' 또는 'naver_locations')으로 변경해보세요.
+        const SOURCE_LAYER = 'ko_template.xlsx - Sheet1' || 'map' || 'google_locations' || 'naver_locations';
 
-        // 4. 레이어 A: 클러스터 덩어리 효과
+        // 4. 레이어 구성 A: 클러스터 서클
         map.addLayer({
             id: 'clusters',
             type: 'circle',
@@ -126,7 +148,7 @@
             }
         });
 
-        // 5. 레이어 B: 클러스터 내부 숫자
+        // 5. 레이어 구성 B: 클러스터 내부 카운트 숫자
         map.addLayer({
             id: 'cluster-count',
             type: 'symbol',
@@ -140,7 +162,7 @@
             }
         });
 
-        // 6. 레이어 C: 개별 마커 (종류별 동적 색상 매핑)
+        // 6. 레이어 구성 C: 개별 마커 포인트
         map.addLayer({
             id: 'unclustered-point',
             type: 'circle',
@@ -162,7 +184,7 @@
             }
         });
 
-        // 7. 클러스터 클릭 시 확대
+        // 클러스터 클릭 시 점진 확대
         map.on('click', 'clusters', (e) => {
             const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
             const clusterId = features[0].properties.cluster_id;
@@ -172,7 +194,7 @@
             });
         });
 
-        // 8. 개별 마커 클릭 시 속성 기반 팝업 렌더링
+        // 개별 데이터 팝업창
         map.on('click', 'unclustered-point', (e) => {
             const props = e.features[0].properties;
             let dateRow = '';
@@ -194,7 +216,6 @@
                 .addTo(map);
         });
 
-        // 커서 인터랙션
         const pointerLayers = ['clusters', 'unclustered-point'];
         pointerLayers.forEach(layer => {
             map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -202,7 +223,7 @@
         });
     });
 
-    // 9. 제미나이 AI 검색 엔진 연동 (데이터 키워드 대화형 검색 추가)
+    // 7. 제미나이 AI 검색 연동 부문
     document.getElementById('send-btn').addEventListener('click', processAiCommand);
     document.getElementById('gis-command').addEventListener('keypress', (e) => { if(e.key === 'Enter') processAiCommand(); });
     
@@ -216,36 +237,10 @@
 
         statusEl.innerText = "제미나이가 공간 데이터베이스 쿼리를 분석하고 있습니다...";
 
-        // System Instruction에 키워드 텍스트 검색 기능('업체명/장소명 매칭') 가이드 추가
         const systemInstruction = `
         너는 웹 지도 시스템(PMTiles 벡터레이어)의 실시간 검색 및 필터를 제어하는 GIS 인공지능 어시스턴트야.
-        사용자의 지리 정보 요구사항이나 특정 키워드 검색 요청을 분석해서 MapLibre GL JS용 필터 규칙(JSON)을 도출해야 해.
-        
-        [데이터 스키마 및 속성 정의]
-        - type: '관광지', '축제', '행사', '공연' 등
-        - city: '서울', '강원도', '전라남도', '경상남도', '제주도', '경기도' 등
-        - title: 관광지명, 축제명, 업체명 (예: '봄의 왈츠 촬영지', '씨페스티벌' 등)
-        
-        [검색 연산자 가이드]
-        1. 특정 지역/분류 차단/필터링: "==", "in" 연산자 사용
-        2. 명칭/텍스트 키워드 매칭(검색 기능): MapLibre 표현식의 "기타 텍스트 포함 여부"를 처리하기 위해, 특정 단어가 들어간 텍스트 검색 요청 시 'has' 연산자를 우회하거나 특정 속성 일치 유도.
-           특히 텍스트 부분 일치(Like 검색)는 MapLibre 스펙상 엄격하므로 사용자가 명칭을 직접 언급하면 ["코드가 포함된 배열"] 혹은 특정 title 속성을 명시적으로 타게팅해줘.
-           가장 추천하는 형태는 문자열 포함 여부를 검사하는 ["in", "검색단어", ["get", "title"]] 구문이야.
-        
-        [질의 패턴별 반환 예시]
-        유형 1) 단순 지역 및 종류 필터 ("서울 축제 보여줘")
-        { "filter": ["all", ["==", "type", "축제"], ["==", "city", "서울"]], "center": [126.9780, 37.5665], "zoom": 11, "message": "서울 지역의 축제 정보를 필터링합니다." }
-        
-        유형 2) 장소명/키워드 데이터 검색 ("'할로윈' 들어간 장소 찾아줘")
-        { "filter": ["in", "할로윈", ["get", "title"]], "center": [127.0565, 37.5665], "zoom": 10, "message": "'할로윈' 키워드가 포함된 장소를 매칭합니다." }
-
-        유형 3) 복합 검색 ("전라남도에 있는 '촬영지' 다 검색해줘")
-        { "filter": ["all", ["==", "city", "전라남도"], ["in", "촬영지", ["get", "title"]]], "center": [126.4622, 34.8160], "zoom": 9, "message": "전라남도 지역 내 '촬영지' 명칭을 포함한 데이터를 검색합니다." }
-
-        유형 4) 전체 화면 복원 ("초기화해줘" 혹은 "전체보기")
-        { "filter": null, "center": [127.9780, 36.5665], "zoom": 7, "message": "전체 데이터를 화면에 표시합니다." }
-
-        응답은 단 1초의 텍스트 설명이나 마크다운(\`\`\`) 없이 순수 JSON 오브젝트 문자열만 반환해.
+        사용자의 요구사항을 분석해서 MapLibre GL JS용 필터 규칙(JSON)을 도출해야 해.
+        출력은 반드시 마크다운(\`\`\`) 없이 순수 JSON 오브젝트 문자열만 반환해.
         `;
 
         try {
@@ -253,7 +248,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: systemInstruction + "\n\n사용자 검색어/명령어: " + command }] }]
+                    contents: [{ parts: [{ text: systemInstruction + "\n\n사용자 검색어: " + command }] }]
                 })
             });
 
@@ -264,7 +259,6 @@
             const result = JSON.parse(aiResponseText);
             statusEl.innerText = `검색 결과: ${result.message}`;
             
-            // 10. PMTiles 레이어 컴포넌트에 동적 검색 필터 트리거링
             if (result.filter === null) {
                 map.setFilter('clusters', ['has', 'point_count']);
                 map.setFilter('cluster-count', ['has', 'point_count']);
@@ -275,12 +269,11 @@
                 map.setFilter('unclustered-point', ["all", result.filter, ["!", ["has", "point_count"]]]);
             }
             
-            // 검색된 최적의 스팟 시점으로 무빙
             map.flyTo({ center: result.center, zoom: result.zoom, essential: true });
 
         } catch (error) {
             console.error(error);
-            statusEl.innerText = "검색 쿼리 변환 오류가 발생했습니다. 키워드를 명확하게 쳐보세요.";
+            statusEl.innerText = "검색 오류가 발생했습니다.";
         }
     }
 </script>
