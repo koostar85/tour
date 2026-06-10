@@ -87,23 +87,38 @@
     const PMTILES_URL = "https://koostar85.github.io/tour/map.pmtiles";
 
     // 2. OpenStreetMap 배경 지도 설정
-    const map = new maplibreGl.Map({
-        container: 'map',
-        style: {
-            "version": 8,
-            "sources": {
-                "osm-tiles": {
-                    "type": "raster",
-                    "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-                    "tileSize": 256,
-                    "attribution": "© OpenStreetMap"
-                }
-            },
-            "layers": [{ "id": "osm-layer", "type": "raster", "source": "osm-tiles" }]
+// index.html 내 지도 생성 부분을 아래 코드로 교체하세요
+const map = new maplibreGl.Map({
+    container: 'map',
+    style: {
+        "version": 8,
+        "sources": {
+            "osm-tiles": {
+                "type": "raster",
+                // 하단의 tiles 배열 주소가 정확한지 확인 (https 필수)
+                "tiles": [
+                    "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                ],
+                "tileSize": 256,
+                "attribution": "© OpenStreetMap contributors"
+            }
         },
-        center: [127.9780, 36.5665],
-        zoom: 7
-    });
+        "layers": [
+            {
+                "id": "osm-layer",
+                "type": "raster",
+                "source": "osm-tiles",
+                "minzoom": 0,
+                "maxzoom": 19
+            }
+        ]
+    },
+    center: [127.9780, 36.5665], // 대한민국 중심
+    zoom: 7
+});
+
 
     map.on('load', () => {
         // 3. PMTiles 소스 추가 (타일 URL 구조가 pmtiles:// 로 시작해야 합니다)
