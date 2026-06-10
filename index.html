@@ -2,16 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="utf-8">
-    <title>대한민국 공간정보 AI 검색 포털 (PMTiles 안정화 버전)</title>
-    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <title>대한민국 공간정보 AI 검색 포털 (초안정화 버전)</title>
+    <script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"></script>
     <style>
-        /* [중요] 지도가 안 보일 때 크기 문제를 원천 차단하기 위한 필수 CSS */
         html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; height: 100%; background-color: #f4f3f0; }
         
-        /* 제미나이 프롬프트 UI */
         .ai-container {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
             background: rgba(255, 255, 255, 0.95); padding: 15px;
@@ -25,7 +23,6 @@
         .status-box { font-size: 12px; color: #666; max-height: 100px; overflow-y: auto; }
         .api-key-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
         
-        /* 범례 UI */
         .legend {
             position: absolute; bottom: 30px; right: 20px; z-index: 1000;
             background: white; padding: 12px; border-radius: 6px;
@@ -41,9 +38,9 @@
 <div id="map"></div>
 
 <div class="ai-container">
-    <h3>🪄 Gemini GIS 검색 (PMTiles)</h3>
+    <h3>🪄 Gemini GIS 통합 AI 검색</h3>
     <div class="input-group">
-        <input type="text" id="gis-command" class="ai-input" placeholder="예: 서울에 있는 관광지 검색해줘">
+        <input type="text" id="gis-command" class="ai-input" placeholder="예: 경기도에 있는 축제 보여줘">
         <button id="send-btn" class="ai-btn">요청</button>
     </div>
     <div id="status" class="status-box">명령어 또는 검색 키워드를 입력하세요.</div>
@@ -78,15 +75,14 @@
     clusterLabel.innerHTML = `<span class="legend-key" style="background-color: #51bbd6;"></span><b>군집(클러스터)</b>`;
     legendEl.appendChild(clusterLabel);
 
-    // 1. PMTiles 프로토콜 설정 변경 (안정성 강화 문법)
+    // 1. PMTiles 프로토콜 등록
     const protocol = new pmtiles.Protocol();
     maplibreGl.addProtocol("pmtiles", protocol.tile);
 
-    // ⚠️ [중요] GitHub Pages 배포 환경에서는 도메인이 다를 때를 대비해 윈도우 현재 위치를 기반으로 상대경로 연산을 처리해 에러를 차단합니다.
+    // GitHub Pages 도메인 인식 경로 처리 완료
     const PMTILES_URL = `${window.location.origin}${window.location.pathname.replace(/\/$/, "")}/map.pmtiles`;
-    console.log("PMTiles 로드 예정 경로:", PMTILES_URL);
 
-    // 2. OSM 배경 지도 렌더링 에러 차단용 풀-스타일 구조로 초기화
+    // 2. OSM 지도가 깨지지 않도록 절대 안전한 오픈소스 CDN 주소 구조 세팅
     const map = new maplibreGl.Map({
         container: 'map',
         style: {
@@ -94,10 +90,10 @@
             "sources": {
                 "osm-tiles": {
                     "type": "raster",
-                    // 전 세계 오픈 스트리트 맵 공식 CDN 미러 다중 구성으로 딜레이 차단
+                    // 카토DB(CartoDB) 미러와 OSM 공식 미러 동시 백업 구성
                     "tiles": [
-                        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+                        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     ],
                     "tileSize": 256,
                     "attribution": "© OpenStreetMap contributors"
@@ -118,9 +114,7 @@
     });
 
     map.on('load', () => {
-        console.log("배경 지도 로드 완료");
-
-        // 3. PMTiles 소스 추가
+        // 3. PMTiles 데이터 소스 추가
         map.addSource('my-pmtiles-data', {
             type: 'vector',
             url: `pmtiles://${PMTILES_URL}`, 
@@ -129,13 +123,10 @@
             clusterRadius: 60         
         });
 
-        // ⚠️ [핵심 수정 원인] Tippecanoe 실행 시 "-o map.pmtiles"로 만들면 
-        // 파일 내 소스레이어 이름은 'map'이 아니라 원래 원본 GeoJSON 파일의 이름(확장자 제외)이 밀고 들어갑니다.
-        // 어떤 이름이 오든 무조건 매칭하기 위해 임시 변수 지정 후 런타임에서 강제 대입하거나 확인합니다.
-        // 만약 안 나온다면 본인이 만든 GeoJSON 파일명(예: 'google_locations' 또는 'naver_locations')으로 변경해보세요.
-        const SOURCE_LAYER = 'ko_template.xlsx - Sheet1' || 'map' || 'google_locations' || 'naver_locations';
+        // ⚠️ 1단계에서 -l 옵션으로 고정한 레이어 이름인 'locations'를 지정합니다.
+        const SOURCE_LAYER = 'locations';
 
-        // 4. 레이어 구성 A: 클러스터 서클
+        // 4. 레이어 구성 A: 클러스터
         map.addLayer({
             id: 'clusters',
             type: 'circle',
@@ -148,7 +139,7 @@
             }
         });
 
-        // 5. 레이어 구성 B: 클러스터 내부 카운트 숫자
+        // 5. 레이어 구성 B: 숫자
         map.addLayer({
             id: 'cluster-count',
             type: 'symbol',
@@ -157,12 +148,11 @@
             filter: ['has', 'point_count'],
             layout: {
                 'text-field': '{point_count}',
-                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
                 'text-size': 11
             }
         });
 
-        // 6. 레이어 구성 C: 개별 마커 포인트
+        // 6. 레이어 구성 C: 개별 마커
         map.addLayer({
             id: 'unclustered-point',
             type: 'circle',
@@ -184,7 +174,7 @@
             }
         });
 
-        // 클러스터 클릭 시 점진 확대
+        // 클릭 이벤트 핸들러
         map.on('click', 'clusters', (e) => {
             const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
             const clusterId = features[0].properties.cluster_id;
@@ -194,12 +184,12 @@
             });
         });
 
-        // 개별 데이터 팝업창
         map.on('click', 'unclustered-point', (e) => {
             const props = e.features[0].properties;
             let dateRow = '';
-            if (props.start_date && props.start_date !== 'nan' && props.start_date !== '') {
-                dateRow = `<p style="margin:5px 0; font-size:12px;">🗓️ <b>기간:</b> ${props.start_date} ~ ${props.end_date || '미정'}</p>`;
+            // 업로드하신 CSV의 'start date' 스펙 유효성 검사 처리
+            if (props['start date'] && props['start date'] !== 'nan' && props['start date'] !== '') {
+                dateRow = `<p style="margin:5px 0; font-size:12px;">🗓️ <b>기간:</b> ${props['start date']} ~ ${props['end date'] || '미정'}</p>`;
             }
 
             new maplibreGl.Popup()
@@ -209,7 +199,7 @@
                         <span style="background:${typeColors[props.type] || '#7f8c8d'}; color:white; padding:2px 6px; border-radius:3px; font-size:10px; font-weight:bold;">${props.type}</span>
                         <h3 style="margin:8px 0 5px 0; font-size:15px; border-bottom:1px solid #eee; padding-bottom:5px;">${props.title}</h3>
                         <p style="margin:5px 0; font-size:12px;">📍 <b>지역:</b> ${props.city}</p>
-                        <p style="margin:5px 0; font-size:12px;">🏠 <b>주소:</b> ${props.address}</p>
+                        <p style="margin:5px 0; font-size:12px;">🏠 <b>주소:</b> ${props.place || props.address}</p>
                         ${dateRow}
                     </div>
                 `)
@@ -223,7 +213,7 @@
         });
     });
 
-    // 7. 제미나이 AI 검색 연동 부문
+    // 7. 제미나이 AI 검색 연동 (CSV 컬럼 매핑 완벽 반영)
     document.getElementById('send-btn').addEventListener('click', processAiCommand);
     document.getElementById('gis-command').addEventListener('keypress', (e) => { if(e.key === 'Enter') processAiCommand(); });
     
@@ -232,14 +222,15 @@
         const apiKey = document.getElementById('gemini-key').value;
         const statusEl = document.getElementById('status');
 
-        if (!command) return alert('명령어 또는 검색어를 입력하세요.');
+        if (!command) return alert('명령어를 입력하세요.');
         if (!apiKey) return alert('Gemini API Key를 입력해주세요.');
 
-        statusEl.innerText = "제미나이가 공간 데이터베이스 쿼리를 분석하고 있습니다...";
+        statusEl.innerText = "공간 데이터 필터 쿼리를 구성 중입니다...";
 
         const systemInstruction = `
         너는 웹 지도 시스템(PMTiles 벡터레이어)의 실시간 검색 및 필터를 제어하는 GIS 인공지능 어시스턴트야.
         사용자의 요구사항을 분석해서 MapLibre GL JS용 필터 규칙(JSON)을 도출해야 해.
+        - 컬럼 규칙 명세: type, city, title
         출력은 반드시 마크다운(\`\`\`) 없이 순수 JSON 오브젝트 문자열만 반환해.
         `;
 
@@ -273,7 +264,7 @@
 
         } catch (error) {
             console.error(error);
-            statusEl.innerText = "검색 오류가 발생했습니다.";
+            statusEl.innerText = "분석 중 에러가 발생했습니다.";
         }
     }
 </script>
