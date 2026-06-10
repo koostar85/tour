@@ -2,14 +2,15 @@
 <html lang="ko">
 <head>
     <meta charset="utf-8">
-    <title>대한민국 관광지 & 축제 검색 - Gemini GIS</title>
+    <title>대한민국 공간정보 AI 검색 포털 (PMTiles)</title>
     <script src="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"></script>
     <style>
         body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
         
-        /* 제미나이 프롬프트 UI 스타일 */
+        /* 제미나이 프롬프트 UI */
         .ai-container {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
             background: rgba(255, 255, 255, 0.95); padding: 15px;
@@ -23,13 +24,15 @@
         .status-box { font-size: 12px; color: #666; max-height: 100px; overflow-y: auto; }
         .api-key-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
         
-        /* 범례(Legend) 스타일 추가 */
+        /* 동적 범례 UI */
         .legend {
             position: absolute; bottom: 30px; right: 20px; z-index: 1000;
-            background: white; padding: 10px; border-radius: 5px;
-            box-shadow: 0 1px 5px rgba(0,0,0,0.4); font-size: 12px; line-height: 18px;
+            background: white; padding: 12px; border-radius: 6px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.3); font-size: 12px; line-height: 20px; min-width: 120px;
         }
-        .legend-key { display: inline-block; border-radius: 50%; width: 10px; height: 10px; margin-right: 5px; }
+        .legend h4 { margin: 0 0 8px 0; font-size: 13px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .legend-key { display: inline-block; border-radius: 50%; width: 10px; height: 10px; margin-right: 8px; flex-shrink: 0; }
     </style>
 </head>
 <body>
@@ -37,26 +40,53 @@
 <div id="map"></div>
 
 <div class="ai-container">
-    <h3>🪄 Gemini GIS 통합 검색</h3>
+    <h3>🪄 Gemini GIS 통합 AI 검색 (PMTiles)</h3>
     <div class="input-group">
-        <input type="text" id="gis-command" class="ai-input" placeholder="예: 경기도에 있는 축제만 필터링해줘">
+        <input type="text" id="gis-command" class="ai-input" placeholder="예: 서울에 있는 관광지 검색해줘">
         <button id="send-btn" class="ai-btn">요청</button>
     </div>
-    <div id="status" class="status-box">명령을 입력하세요 (관광지/축제 통합 클러스터맵).</div>
+    <div id="status" class="status-box">명령어 또는 검색 키워드를 입력하세요.</div>
     <div class="api-key-section">
         <input type="password" id="gemini-key" class="ai-input" placeholder="Gemini API Key 입력">
     </div>
 </div>
 
-<div class="legend">
-    <h4>구분</h4>
-    <div><span class="legend-key" style="background-color: #007cbf;"></span>관광지</div>
-    <div><span class="legend-key" style="background-color: #ff5252;"></span>축제</div>
-    <div><span class="legend-key" style="background-color: #51bbd6;"></span>클러스터 (군집)</div>
+<div class="legend" id="map-legend">
+    <h4>🎨 데이터 마커 구분</h4>
 </div>
 
 <script>
-    // 1. OpenStreetMap 배경 지도 설정
+    // 데이터 종류(Type)별 고유 색상 정의
+    const typeColors = {
+        '관광지': '#007cbf',
+        '축제': '#ff5252',
+        '행사': '#2ecc71',
+        '공연': '#9b59b6',
+        '기타': '#7f8c8d'
+    };
+
+    // 범례 UI 동적 생성
+    const legendEl = document.getElementById('map-legend');
+    Object.keys(typeColors).forEach(type => {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        item.innerHTML = `<span class="legend-key" style="background-color: ${typeColors[type]};"></span>${type}`;
+        legendEl.appendChild(item);
+    });
+    const clusterLabel = document.createElement('div');
+    clusterLabel.className = 'legend-item';
+    clusterLabel.innerHTML = `<span class="legend-key" style="background-color: #51bbd6;"></span><b>군집(클러스터)</b>`;
+    legendEl.appendChild(clusterLabel);
+
+    // 1. PMTiles 프로토콜 등록 (MapLibre에 PMTiles를 인식시킵니다)
+    let protocol = new pmtiles.Protocol();
+    maplibreGl.addProtocol("pmtiles", protocol.tile);
+
+    // ⚠️ 본인의 실제 GitHub 배포용 PMTiles 경로 지정
+    // 저장소 이름이 tour이므로 아래와 같이 상대 경로 또는 절대 경로를 지정합니다.
+    const PMTILES_URL = "https://koostar85.github.io/tour/map.pmtiles";
+
+    // 2. OpenStreetMap 배경 지도 설정
     const map = new maplibreGl.Map({
         container: 'map',
         style: {
@@ -66,126 +96,119 @@
                     "type": "raster",
                     "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
                     "tileSize": 256,
-                    "attribution": "© OpenStreetMap contributors"
+                    "attribution": "© OpenStreetMap"
                 }
             },
             "layers": [{ "id": "osm-layer", "type": "raster", "source": "osm-tiles" }]
         },
-        center: [127.9780, 36.5665], // 대한민국 중심 좌표
+        center: [127.9780, 36.5665],
         zoom: 7
     });
 
     map.on('load', () => {
-        // 2. Tippecanoe MVT 벡터 타일 소스 추가 (관광지, 축제 데이터 모두 포함)
-        map.addSource('my-gis-data', {
+        // 3. PMTiles 소스 추가 (타일 URL 구조가 pmtiles:// 로 시작해야 합니다)
+        map.addSource('my-pmtiles-data', {
             type: 'vector',
-            // ⚠️ 본인의 실제 서버리스 MVT 타일(.pbf) 경로로 수정하셔야 합니다.
-            tiles: ['https://your-cloudfront-id.cloudfront.net/my_tiles/{z}/{x}/{y}.pbf'], 
-            minzoom: 5,
-            maxzoom: 15,
-            cluster: true,            // 클러스터링 활성화 (관광지+축제 통합 군집화)
-            clusterMaxZoom: 13,       // 줌 13까지만 뭉치고 14부터는 해제되어 낱개로 보임
-            clusterRadius: 60         // 뭉칠 반경 범위 (픽셀)
+            url: `pmtiles://${PMTILES_URL}`, 
+            cluster: true,            // 클러스터링 활성화
+            clusterMaxZoom: 13,       
+            clusterRadius: 60         
         });
 
-        // 3. 레이어 A: 클러스터 원형 마커 (데이터가 모여있는 덩어리)
+        // Tippecanoe로 빌드 시 소스레이어 이름은 파일명인 'map' 또는 내부 GeoJSON 파일명이 됩니다.
+        // 여기서는 기본값인 'map'으로 설정하되, 안 나오면 'google_locations' 등으로 맞추어야 합니다.
+        const SOURCE_LAYER = 'map'; 
+
+        // 4. 레이어 A: 클러스터 덩어리 효과
         map.addLayer({
             id: 'clusters',
             type: 'circle',
-            source: 'my-gis-data',
-            'source-layer': 'locations',
-            filter: ['has', 'point_count'], // 군집된 데이터만 대상
+            source: 'my-pmtiles-data',
+            'source-layer': SOURCE_LAYER,
+            filter: ['has', 'point_count'],
             paint: {
-                // 내부에 포함된 총 개수(관광지+축제 합산)에 따라 색상과 크기 변경
-                'circle-color': [
-                    'step', ['get', 'point_count'],
-                    '#51bbd6', 20,   // 20개 미만: 하늘색
-                    '#f1f075', 100,  // 100개 미만: 노란색
-                    '#f28cb1'        // 100개 이상: 분홍색
-                ],
-                'circle-radius': [
-                    'step', ['get', 'point_count'],
-                    18, 20,          
-                    24, 100,         
-                    30               
-                ]
+                'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 30, '#f1f075', 100, '#f28cb1'],
+                'circle-radius': ['step', ['get', 'point_count'], 18, 30, 24, 100, 30]
             }
         });
 
-        // 4. 레이어 B: 클러스터 내부 숫자 표시
+        // 5. 레이어 B: 클러스터 내부 숫자
         map.addLayer({
             id: 'cluster-count',
             type: 'symbol',
-            source: 'my-gis-data',
-            'source-layer': 'locations',
+            source: 'my-pmtiles-data',
+            'source-layer': SOURCE_LAYER,
             filter: ['has', 'point_count'],
             layout: {
                 'text-field': '{point_count}',
                 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-                'text-size': 12
+                'text-size': 11
             }
         });
 
-        // 5. 레이어 C: 낱개 마커 개별 표출 (관광지와 축제를 색상으로 분기)
+        // 6. 레이어 C: 개별 마커 (종류별 동적 색상 매핑)
         map.addLayer({
             id: 'unclustered-point',
             type: 'circle',
-            source: 'my-gis-data',
-            'source-layer': 'locations',
-            filter: ['!', ['has', 'point_count']], // 군집되지 않은 낱개 데이터만 대상
+            source: 'my-pmtiles-data',
+            'source-layer': SOURCE_LAYER,
+            filter: ['!', ['has', 'point_count']],
             paint: {
-                // 속성의 'type' 값을 읽어와서 관광지는 파란색, 축제는 빨간색으로 매핑
                 'circle-color': [
                     'match', ['get', 'type'],
-                    '관광지', '#007cbf',
-                    '축제', '#ff5252',
-                    '#ccc' // 예외 상황 대비 기본값 회색
+                    '관광지', typeColors['관광지'],
+                    '축제', typeColors['축제'],
+                    '행사', typeColors['행사'],
+                    '공연', typeColors['공연'],
+                    typeColors['기타']
                 ],
                 'circle-radius': 7,
-                'circle-stroke-width': 1,
+                'circle-stroke-width': 1.5,
                 'circle-stroke-color': '#fff'
             }
         });
 
-        // 6. 인터랙션: 클러스터 클릭 시 해당 영역으로 확대(Zoom In)
+        // 7. 클러스터 클릭 시 확대
         map.on('click', 'clusters', (e) => {
             const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
             const clusterId = features[0].properties.cluster_id;
-            map.getSource('my-gis-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
+            map.getSource('my-pmtiles-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
                 if (err) return;
                 map.easeTo({ center: features[0].geometry.coordinates, zoom: zoom + 0.5 });
             });
         });
 
-        // 7. 인터랙션: 개별 마커 클릭 시 속성에 맞는 상세 팝업창 표출
+        // 8. 개별 마커 클릭 시 속성 기반 팝업 렌더링
         map.on('click', 'unclustered-point', (e) => {
             const props = e.features[0].properties;
-            
-            // 축제 데이터일 경우 시작/종료일 정보 추가 표시 처리
-            let dateInfo = '';
-            if (props.type === '축제' && props.start_date) {
-                dateInfo = `<p><b>기간:</b> ${props.start_date} ~ ${props.end_date}</p>`;
+            let dateRow = '';
+            if (props.start_date && props.start_date !== 'nan' && props.start_date !== '') {
+                dateRow = `<p style="margin:5px 0; font-size:12px;">🗓️ <b>기간:</b> ${props.start_date} ~ ${props.end_date || '미정'}</p>`;
             }
 
             new maplibreGl.Popup()
                 .setLngLat(e.lngLat)
                 .setHTML(`
-                    <h3>[${props.type}] ${props.title}</h3>
-                    <p><b>지역:</b> ${props.city}</p>
-                    <p><b>주소:</b> ${props.address}</p>
-                    ${dateInfo}
+                    <div style="padding:5px;">
+                        <span style="background:${typeColors[props.type] || '#7f8c8d'}; color:white; padding:2px 6px; border-radius:3px; font-size:10px; font-weight:bold;">${props.type}</span>
+                        <h3 style="margin:8px 0 5px 0; font-size:15px; border-bottom:1px solid #eee; padding-bottom:5px;">${props.title}</h3>
+                        <p style="margin:5px 0; font-size:12px;">📍 <b>지역:</b> ${props.city}</p>
+                        <p style="margin:5px 0; font-size:12px;">🏠 <b>주소:</b> ${props.address}</p>
+                        ${dateRow}
+                    </div>
                 `)
                 .addTo(map);
         });
 
-        // 마우스 커서 인터랙션 정의
-        map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
-        map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'unclustered-point', () => { map.getCanvas().style.cursor = ''; });
+        // 커서 인터랙션
+        const pointerLayers = ['clusters', 'unclustered-point'];
+        pointerLayers.forEach(layer => {
+            map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+        });
     });
 
-    // 8. 제미나이 AI 연동 및 프롬프트 결과 맵 필터 적용
+    // 9. 제미나이 AI 검색 엔진 연동 (데이터 키워드 대화형 검색 추가)
     document.getElementById('send-btn').addEventListener('click', processAiCommand);
     document.getElementById('gis-command').addEventListener('keypress', (e) => { if(e.key === 'Enter') processAiCommand(); });
     
@@ -194,34 +217,41 @@
         const apiKey = document.getElementById('gemini-key').value;
         const statusEl = document.getElementById('status');
 
-        if (!command) return alert('명령어를 입력하세요.');
+        if (!command) return alert('명령어 또는 검색어를 입력하세요.');
         if (!apiKey) return alert('Gemini API Key를 입력해주세요.');
 
-        statusEl.innerText = "Gemini 분석 중...";
+        statusEl.innerText = "제미나이가 공간 데이터베이스 쿼리를 분석하고 있습니다...";
 
+        // System Instruction에 키워드 텍스트 검색 기능('업체명/장소명 매칭') 가이드 추가
         const systemInstruction = `
-        너는 웹 지도(MapLibre GL JS)의 필터링 규칙을 생성하는 스마트 GIS 어시스턴트야.
-        사용자의 요구사항을 파악해서 데이터 필터 규칙(JSON 데이터)만 정확히 반환해야 해.
+        너는 웹 지도 시스템(PMTiles 벡터레이어)의 실시간 검색 및 필터를 제어하는 GIS 인공지능 어시스턴트야.
+        사용자의 지리 정보 요구사항이나 특정 키워드 검색 요청을 분석해서 MapLibre GL JS용 필터 규칙(JSON)을 도출해야 해.
         
-        [데이터 명세]
-        - type: '관광지' 또는 '축제'
-        - city: '서울', '강원도', '전라남도', '경상남도', '제주도', '경기도', '대구', '부산' 등
+        [데이터 스키마 및 속성 정의]
+        - type: '관광지', '축제', '행사', '공연' 등
+        - city: '서울', '강원도', '전라남도', '경상남도', '제주도', '경기도' 등
+        - title: 관광지명, 축제명, 업체명 (예: '봄의 왈츠 촬영지', '씨페스티벌' 등)
         
-        사용자의 질문 유형에 맞춰 복합적인 MapLibre GL JS용 ['all', ...] 필터 쿼리를 조합해줘.
+        [검색 연산자 가이드]
+        1. 특정 지역/분류 차단/필터링: "==", "in" 연산자 사용
+        2. 명칭/텍스트 키워드 매칭(검색 기능): MapLibre 표현식의 "기타 텍스트 포함 여부"를 처리하기 위해, 특정 단어가 들어간 텍스트 검색 요청 시 'has' 연산자를 우회하거나 특정 속성 일치 유도.
+           특히 텍스트 부분 일치(Like 검색)는 MapLibre 스펙상 엄격하므로 사용자가 명칭을 직접 언급하면 ["코드가 포함된 배열"] 혹은 특정 title 속성을 명시적으로 타게팅해줘.
+           가장 추천하는 형태는 문자열 포함 여부를 검사하는 ["in", "검색단어", ["get", "title"]] 구문이야.
         
-        예시 1) "서울에 있는 축제만 보여줘"
-        { "filter": ["all", ["==", "type", "축제"], ["==", "city", "서울"]], "center": [126.9780, 37.5665], "zoom": 11, "message": "서울 지역의 축제만 필터링합니다." }
+        [질의 패턴별 반환 예시]
+        유형 1) 단순 지역 및 종류 필터 ("서울 축제 보여줘")
+        { "filter": ["all", ["==", "type", "축제"], ["==", "city", "서울"]], "center": [126.9780, 37.5665], "zoom": 11, "message": "서울 지역의 축제 정보를 필터링합니다." }
         
-        예시 2) "제주도 관광지 찾아줘"
-        { "filter": ["all", ["==", "type", "관광지"], ["==", "city", "제주도"]], "center": [126.5312, 33.3616], "zoom": 10, "message": "제주도의 관광지 정보를 필터링합니다." }
+        유형 2) 장소명/키워드 데이터 검색 ("'할로윈' 들어간 장소 찾아줘")
+        { "filter": ["in", "할로윈", ["get", "title"]], "center": [127.0565, 37.5665], "zoom": 10, "message": "'할로윈' 키워드가 포함된 장소를 매칭합니다." }
 
-        예시 3) "강원도 전부 다 보여줘" (타입 구분 없이 특정 지역 전체인 경우)
-        { "filter": ["==", "city", "강원도"], "center": [128.1555, 37.8228], "zoom": 9, "message": "강원도 전체 데이터를 보여줍니다." }
-        
-        예시 4) "전체 다 보여줘" 또는 "초기화해줘"
+        유형 3) 복합 검색 ("전라남도에 있는 '촬영지' 다 검색해줘")
+        { "filter": ["all", ["==", "city", "전라남도"], ["in", "촬영지", ["get", "title"]]], "center": [126.4622, 34.8160], "zoom": 9, "message": "전라남도 지역 내 '촬영지' 명칭을 포함한 데이터를 검색합니다." }
+
+        유형 4) 전체 화면 복원 ("초기화해줘" 혹은 "전체보기")
         { "filter": null, "center": [127.9780, 36.5665], "zoom": 7, "message": "전체 데이터를 화면에 표시합니다." }
 
-        출력은 반드시 마크다운(\`\`\`) 없이 순수한 JSON 포맷 한 덩어리만 반환해줘. 설명텍스트는 절대 금지야.
+        응답은 단 1초의 텍스트 설명이나 마크다운(\`\`\`) 없이 순수 JSON 오브젝트 문자열만 반환해.
         `;
 
         try {
@@ -229,17 +259,36 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: systemInstruction + "\n\n사용자 명령: " + command }] }]
+                    contents: [{ parts: [{ text: systemInstruction + "\n\n사용자 검색어/명령어: " + command }] }]
                 })
             });
 
             const resData = await response.json();
             let aiResponseText = resData.candidates[0].content.parts[0].text.trim();
-            aiResponseText = aiResponseText.replace(/```json|```/g, ''); // 텍스트 정제 방어코드
+            aiResponseText = aiResponseText.replace(/```json|```/g, ''); 
             
             const result = JSON.parse(aiResponseText);
-            statusEl.innerText = `결과: ${result.message}`;
+            statusEl.innerText = `검색 결과: ${result.message}`;
             
-            // 9. 제미나이가 도출한 필터를 클러스터 및 낱개 레이어에 동시 바인딩
+            // 10. PMTiles 레이어 컴포넌트에 동적 검색 필터 트리거링
             if (result.filter === null) {
-                // 전체 데이터 표시 모드일 때
+                map.setFilter('clusters', ['has', 'point_count']);
+                map.setFilter('cluster-count', ['has', 'point_count']);
+                map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+            } else {
+                map.setFilter('clusters', ["all", result.filter, ["has", "point_count"]]);
+                map.setFilter('cluster-count', ["all", result.filter, ["has", "point_count"]]);
+                map.setFilter('unclustered-point', ["all", result.filter, ["!", ["has", "point_count"]]]);
+            }
+            
+            // 검색된 최적의 스팟 시점으로 무빙
+            map.flyTo({ center: result.center, zoom: result.zoom, essential: true });
+
+        } catch (error) {
+            console.error(error);
+            statusEl.innerText = "검색 쿼리 변환 오류가 발생했습니다. 키워드를 명확하게 쳐보세요.";
+        }
+    }
+</script>
+</body>
+</html>
