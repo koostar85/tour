@@ -87,7 +87,7 @@
             container: 'map',
             style: {
                 "version": 8,
-                "glyphs": "[https://demotiles.maplibre.org/font/](https://demotiles.maplibre.org/font/){fontstack}/{range}.pbf",
+                "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
                 "sources": {
                     "osm-tiles": {
                         "type": "raster",
@@ -164,7 +164,7 @@
 
         try {
             // POST 통신으로 사용자의 자유 질문 전송
-            const response = await fetch('[https://effective-meme-v69xp7jprgjj3q7x-3000.app.github.dev/api/analyze-geo](https://effective-meme-v69xp7jprgjj3q7x-3000.app.github.dev/api/analyze-geo)', {
+            const response = await fetch('[https://crispy-space-garbanzo-q7jwvg5v46qvcxjx9-3000.app.github.dev/api/analyze-geo]', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ command: queryText })
