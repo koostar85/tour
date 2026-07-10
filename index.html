@@ -44,6 +44,14 @@
         .legend h4 { margin: 0 0 8px 0; font-size: 13px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
         .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
         .legend-key { display: inline-block; border-radius: 50%; width: 10px; height: 10px; margin-right: 8px; flex-shrink: 0; }
+        
+        /* 팝업 스타일링 디자인 */
+        .maplibre-popup-content {
+            padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+            font-family: 'Malgun Gothic', sans-serif; min-width: 200px;
+        }
+        .popup-title { font-weight: bold; font-size: 14px; margin-bottom: 6px; color: #1a73e8; border-bottom: 1px solid #eee; padding-bottom: 4px;}
+        .popup-info { font-size: 12px; color: #555; margin: 3px 0; }
     </style>
 </head>
 <body>
@@ -56,7 +64,7 @@
         <input type="text" id="gis-command" class="ai-input" placeholder="예: 전라남도 여수시 데이터 보여줘">
         <button id="send-btn" class="ai-btn">요청</button>
     </div>
-    <div id="status" class="status-box">궁금한 지역이나 관광 명소 질문을 입력창에 던져보세요!</div>
+    <div id="status" class="status-box">궁금한 지역이나 관광 명소 질문을 입력창에 던져보세요! 마커를 누르면 상세 정보가 뜹니다.</div>
 </div>
 
 <div class="legend" id="map-legend">
@@ -91,7 +99,7 @@
                 "sources": {
                     "osm-tiles": {
                         "type": "raster",
-                        "tiles": ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"],
+                        "tiles": ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
                         "tileSize": 256,
                         "attribution": "© OpenStreetMap contributors"
                     }
@@ -105,33 +113,42 @@
         map.on('load', () => {
             const GEOJSON_URL = "https://koostar85.github.io/tour/tour.geojson";
 
+            // GeoJSON 소스 등록 (클러스터 옵션 활성화)
             map.addSource('my-gis-data', {
                 type: 'geojson',
                 data: GEOJSON_URL,
                 cluster: true,            
-                clusterMaxZoom: 13,       
-                clusterRadius: 60         
+                clusterMaxZoom: 12, // 🔍 이 레벨 이상으로 확대하면 클러스터가 깨지고 개별 마커가 튀어나옵니다.
+                clusterRadius: 50         
             });
 
+// 1. 클러스터(모여있는 원) 레이어
             map.addLayer({
                 id: 'clusters',
                 type: 'circle',
                 source: 'my-gis-data',
                 filter: ['has', 'point_count'],
                 paint: {
-                    'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 30, '#f1f075', 100, '#f28cb1'],
-                    'circle-radius': ['step', ['get', 'point_count'], 18, 30, 24, 100, 30]
+                    'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 15, '#f1f075', 50, '#f28cb1'],
+                    'circle-radius': ['step', ['get', 'point_count'], 16, 15, 22, 50, 28]
                 }
             });
 
+            // 2. 클러스터 내부 숫자 텍스트 레이어
             map.addLayer({
                 id: 'cluster-count',
                 type: 'symbol',
                 source: 'my-gis-data',
                 filter: ['has', 'point_count'],
-                layout: { 'text-field': '{point_count}', 'text-size': 12 }
+                layout: { 
+                    'text-field': '{point_count}', 
+                    'text-size': 12,
+                    'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular']
+                }
+                // (tip: 레이어간 간섭을 방지하기 위해 심볼 레이어 클릭은 클러스터 원 레이어가 일괄 흡수하도록 설계했습니다.)
             });
 
+            // 3. 개별 점 레이어
             map.addLayer({
                 id: 'unclustered-point',
                 type: 'circle',
@@ -139,13 +156,80 @@
                 filter: ['!', ['has', 'point_count']],
                 paint: {
                     'circle-color': ['match', ['get', 'type'], '관광지', typeColors['관광지'], '축제', typeColors['축제'], '행사', typeColors['행사'], '공연', typeColors['공연'], typeColors['기타']],
-                    'circle-radius': 7, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#fff'
+                    'circle-radius': 8, 
+                    'circle-stroke-width': 1.5, 
+                    'circle-stroke-color': '#fff'
                 }
             });
+
+            // 🌟 [정밀 패치 완료] 클러스터 원을 누르면 수학적으로 중심점 좌표를 계산해 그 지역으로 부드럽게 확대 진입합니다.
+            map.on('click', 'clusters', (e) => {
+                const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+                if (!features.length) return;
+                
+                const clusterId = features[0].properties.cluster_id;
+                // 클릭한 픽셀의 정확한 지도상 지리적 위경도 좌표 추출
+                const coordinates = e.lngLat; 
+
+                map.getSource('my-gis-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
+                    if (err) return;
+                    
+                    // 다음 단계 마커가 다 보일 수 있도록 계산된 줌 레벨 혹은 한 레벨 더 깊게 화면을 비행(easeTo)시킵니다.
+                    map.easeTo({
+                        center: coordinates,
+                        zoom: Math.max(zoom, map.getZoom() + 1.5),
+                        duration: 600 // 부드러운 움직임 속도 (0.6초)
+                    });
+                });
+            });
+        
+            // 🌟 [추가 기능 1] 클러스터 원을 누르면 그 지역으로 쏙 확대 진입
+            map.on('click', 'clusters', (e) => {
+                const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+                const clusterId = features[0].properties.cluster_id;
+                map.getSource('my-gis-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
+                    if (err) return;
+                    map.easeTo({
+                        center: features[0].geometry.coordinates,
+                        zoom: zoom + 0.5
+                    });
+                });
+            });
+
+            // 🌟 [추가 기능 2] 하나의 점(마커)을 찍으면 속성정보 팝업창을 호출
+            map.on('click', 'unclustered-point', (e) => {
+                const coordinates = e.features[0].geometry.coordinates.slice();
+                const props = e.features[0].properties;
+
+                // 데이터 정제 (정보 누락 방지 예외 처리)
+                const title = props.title || '이름 없음';
+                const city = props.city || '정보 없음';
+                const type = props.type || '기타';
+                const place = props.place || props.address || '주소 정보 없음';
+
+                // 말풍선 팝업 HTML 구조 디자인
+                const popupHtml = `
+                    <div class="popup-title">📍 ${title}</div>
+                    <div class="popup-info"><b>분류:</b> ${type}</div>
+                    <div class="popup-info"><b>지역:</b> ${city}</div>
+                    <div class="popup-info"><b>주소:</b> ${place}</div>
+                `;
+
+                // 팝업 생성 및 지도 부착
+                new maplibregl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(popupHtml)
+                    .addTo(map);
+            });
+
+            // 마우스 커서 스타일 세팅 (클릭 가능한 요소임을 안내)
+            map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
+            map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', 'unclustered-point', () => { map.getCanvas().style.cursor = ''; });
         });
     };
 
-    // 엔터키 지원 추가
     document.getElementById('gis-command').addEventListener('keypress', (e) => {
         if(e.key === 'Enter') processAiCommand();
     });
@@ -163,46 +247,50 @@
         statusEl.innerHTML = "⏳ <b>Gemini가 공간 데이터를 지능 분석 중입니다...</b>";
 
         try {
-            // POST 통신으로 사용자의 자유 질문 전송
             const response = await fetch('https://crispy-space-garbanzo-q7jwvg5v46qvcxjx9-3000.app.github.dev/api/analyze-geo', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ command: queryText })
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: queryText })
             });
             
             if (!response.ok) throw new Error("서버 응답 오류");
             const data = await response.json();
 
             if (data.success) {
-                // 1. AI 가이드 해설 텍스트 노출
                 statusEl.innerText = data.message;
 
-                // 2. 지도 동적 필터링 주입 (클러스터와 일반 마커 레이어 일괄 적용)
-                if (!data.filter) {
-                    map.setFilter('clusters', ['has', 'point_count']);
-                    map.setFilter('cluster-count', ['has', 'point_count']);
-                    map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
-                } else {
-                    map.setFilter('clusters', ["all", data.filter, ["has", "point_count"]]);
-                    map.setFilter('cluster-count', ["all", data.filter, ["has", "point_count"]]);
-                    map.setFilter('unclustered-point', ["all", data.filter, ["!", ["has", "point_count"]]]);
-                }
-
-                // 3. AI가 지정한 핵심 중심지 좌표와 확대(Zoom) 비율로 부드럽게 화면 비행 이동(FlyTo)
-                if (data.center) {
+                if (data.center && Array.isArray(data.center)) {
                     map.flyTo({
                         center: data.center,
-                        zoom: data.zoom || 10,
+                        zoom: data.zoom || 11,
                         essential: true,
                         speed: 1.2
                     });
                 }
+
+                try {
+                    if (!data.filter || data.filter.length === 0) {
+                        map.setFilter('clusters', ['has', 'point_count']);
+                        map.setFilter('cluster-count', ['has', 'point_count']);
+                        map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+                    } else {
+                        map.setFilter('clusters', ["all", data.filter, ["has", "point_count"]]);
+                        map.setFilter('cluster-count', ["all", data.filter, ["has", "point_count"]]);
+                        map.setFilter('unclustered-point', ["all", data.filter, ["!", ["has", "point_count"]]]);
+                    }
+                } catch (filterError) {
+                    console.warn("필터 매칭 에러 우회 처리", filterError);
+                    map.setFilter('clusters', ['has', 'point_count']);
+                    map.setFilter('cluster-count', ['has', 'point_count']);
+                    map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+                }
+
             } else {
                 statusEl.innerText = "❌ 분석 실패: " + data.error;
             }
         } catch (error) {
             console.error(error);
-            statusEl.innerHTML = "❌ <b>연결 실패</b><br>백엔드 서버 가동 상태를 점검해 주세요.";
+            statusEl.innerHTML = "❌ <b>연결 실패</b><br>서버나 데이터 상태를 확인해 주세요.";
         } finally {
             btn.disabled = false;
         }
