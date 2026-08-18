@@ -268,22 +268,31 @@
                     });
                 }
 
-                try {
-                    if (!data.filter || data.filter.length === 0) {
-                        map.setFilter('clusters', ['has', 'point_count']);
-                        map.setFilter('cluster-count', ['has', 'point_count']);
-                        map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
-                    } else {
-                        map.setFilter('clusters', ["all", data.filter, ["has", "point_count"]]);
-                        map.setFilter('cluster-count', ["all", data.filter, ["has", "point_count"]]);
-                        map.setFilter('unclustered-point', ["all", data.filter, ["!", ["has", "point_count"]]]);
-                    }
-                } catch (filterError) {
-                    console.warn("필터 매칭 에러 우회 처리", filterError);
-                    map.setFilter('clusters', ['has', 'point_count']);
-                    map.setFilter('cluster-count', ['has', 'point_count']);
-                    map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
-                }
+try {
+    if (!data.filter || data.filter.length === 0) {
+        // 필터 조건이 없을 때 (전체 표시)
+        map.setFilter('clusters', ['has', 'point_count']);
+        map.setFilter('cluster-count', ['has', 'point_count']);
+        map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+    } else {
+        // 필터 조건이 존재할 때: MapLibre GL 조건 조합 방식 수정
+        // data.filter 예시: ["==", ["get", "city"], "여수시"]
+        
+        const clusterFilter = ["all", data.filter, ["has", "point_count"]];
+        const unclusteredFilter = ["all", data.filter, ["!", ["has", "point_count"]]];
+
+        map.setFilter('clusters', clusterFilter);
+        map.setFilter('cluster-count', clusterFilter);
+        map.setFilter('unclustered-point', unclusteredFilter);
+        
+        console.log("✅ 적용된 MapLibre 필터:", unclusteredFilter);
+    }
+} catch (filterError) {
+    console.warn("⚠️ 필터 적용 중 에러 발생, 기본 상태로 우회합니다.", filterError);
+    map.setFilter('clusters', ['has', 'point_count']);
+    map.setFilter('cluster-count', ['has', 'point_count']);
+    map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+}
 
             } else {
                 statusEl.innerText = "❌ 분석 실패: " + data.error;
