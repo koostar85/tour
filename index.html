@@ -327,17 +327,7 @@
             const data = await response.json();
 
             if (data.success) {
-                // 1. 카메라 이동
-                if (data.center && Array.isArray(data.center)) {
-                    map.flyTo({
-                        center: data.center,
-                        zoom: data.zoom || 11,
-                        essential: true,
-                        speed: 1.2
-                    });
-                }
-
-                // 2. 검색 조건 매칭 데이터 필터링
+                // 1. 검색 조건 매칭 데이터 필터링
                 currentMatchedFeatures = [];
                 if (rawGeoJsonData && rawGeoJsonData.features) {
                     currentMatchedFeatures = rawGeoJsonData.features.filter(f => {
@@ -355,7 +345,7 @@
                     });
                 }
 
-                // 3. 지도 데이터 업데이트
+                // 2. 지도 데이터 업데이트 (검색된 지점만 표현)
                 const filteredGeoJson = {
                     type: 'FeatureCollection',
                     features: currentMatchedFeatures
@@ -375,6 +365,41 @@
                 ]);
 
                 map.getSource('my-gis-data').setData(filteredGeoJson);
+
+                // 3. ⭐️ [핵심] 검색된 점들이 하나의 화면에 꽉 차도록 카메라 경계 자동 설정 (Fit Bounds)
+                if (currentMatchedFeatures.length > 0) {
+                    const bounds = new maplibregl.LngLatBounds();
+                    
+                    currentMatchedFeatures.forEach(feature => {
+                        if (feature.geometry && feature.geometry.coordinates) {
+                            bounds.extend(feature.geometry.coordinates);
+                        }
+                    });
+
+                    if (currentMatchedFeatures.length === 1) {
+                        // 결과가 1개일 경우 단일 지점으로 이동
+                        const singleCoords = currentMatchedFeatures[0].geometry.coordinates;
+                        map.flyTo({
+                            center: singleCoords,
+                            zoom: 14,
+                            essential: true
+                        });
+                    } else {
+                        // 결과가 여러 개일 경우 모든 점이 꽉 차게 화면 맞춤
+                        map.fitBounds(bounds, {
+                            padding: { top: 80, bottom: 80, left: 400, right: 80 }, // AI 패널 위치 고려한 여백 설정
+                            maxZoom: 15,
+                            duration: 1000
+                        });
+                    }
+                } else if (data.center && Array.isArray(data.center)) {
+                    // 검색 결과는 없지만 AI가 지역 좌표를 제시해 준 경우
+                    map.flyTo({
+                        center: data.center,
+                        zoom: data.zoom || 11,
+                        essential: true
+                    });
+                }
 
                 // 4. 상태창 메시지 및 전체 장소 리스트 생성
                 let placeListHtml = '';
