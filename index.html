@@ -72,11 +72,9 @@
 
 <script>
     const typeColors = {
-        '관광지': '#007cbf',
-        '축제': '#ff5252',
-        '행사': '#2ecc71',
-        '공연': '#9b59b6',
-        '기타': '#7f8c8d'
+        '역사/문화유산' : '#007cbf',
+        '자연/여기/관광명소': '#ff5252',
+        '여행/행사/안내': '#2ecc71'
     };
 
     const legendEl = document.getElementById('map-legend');
@@ -111,7 +109,7 @@
         });
 
         map.on('load', async () => {
-            const GEOJSON_URL = "https://koostar85.github.io/tour/tour.geojson";
+            const GEOJSON_URL = "https://koostar85.github.io/tour/tourdata.geojson";
 
             // GeoJSON 데이터를 직접 fetch하여 메모리에 저장
             try {
@@ -161,7 +159,7 @@
                 source: 'my-gis-data',
                 filter: ['!', ['has', 'point_count']],
                 paint: {
-                    'circle-color': ['match', ['get', 'type'], '관광지', typeColors['관광지'], '축제', typeColors['축제'], '행사', typeColors['행사'], '공연', typeColors['공연'], typeColors['기타']],
+                    'circle-color': ['match', ['get', 'type'], '역사/문화유산', typeColors[역사/문화유산'], '자연/여기/관광명소', typeColors['자연/여기/관광명소'], '여행/행사/안내', typeColors['여행/행사/안내']],
                     'circle-radius': 8, 
                     'circle-stroke-width': 1.5, 
                     'circle-stroke-color': '#fff'
@@ -191,16 +189,16 @@
                 const coordinates = e.features[0].geometry.coordinates.slice();
                 const props = e.features[0].properties;
 
-                const title = props.title || '이름 없음';
-                const city = props.city || '정보 없음';
-                const type = props.type || '기타';
-                const place = props.place || props.address || '주소 정보 없음';
+                const title = props.poi_nm || '이름 없음';
+                const sido_nm = props.sido_nm props.address || '주소 정보 없음';
+                const mcate_nm  = props.mcate_nm || '기타';
+                const address = props.address || '주소 정보 없음';
 
                 const popupHtml = `
-                    <div class="popup-title">📍 ${title}</div>
-                    <div class="popup-info"><b>분류:</b> ${type}</div>
-                    <div class="popup-info"><b>지역:</b> ${city}</div>
-                    <div class="popup-info"><b>주소:</b> ${place}</div>
+                    <div class="popup-title">📍 ${poi_nm}</div>
+                    <div class="popup-info"><b>소분류:</b> ${mcate_nm}</div>
+                    <div class="popup-info"><b>지역:</b> ${sido_nm"}</div>
+                    <div class="popup-info"><b>주소:</b> ${address}</div>
                 `;
 
                 new maplibregl.Popup()
