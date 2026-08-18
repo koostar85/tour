@@ -270,32 +270,38 @@
 // =========================================================================
 // index.html 내 processAiCommand() 지점의 map.setFilter 부분 수정
 // =========================================================================
-
+// =========================================================================
+// index.html 내 processAiCommand() 내 setFilter 적용 로직 수정
+// =========================================================================
 try {
     if (!data.filter || data.filter.length === 0) {
-        // [1] 검색어가 없을 때 (기본 전체 보기): 클러스터 형태로 표출
+        // [1] 검색어가 없는 기본 상태: 클러스터링으로 표현
         map.setFilter('clusters', ['has', 'point_count']);
         map.setFilter('cluster-count', ['has', 'point_count']);
         map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
     } else {
-        // [2] 검색어 실행 시: 클러스터 원을 없애고 조건에 맞는 모든 점 표출
-        
-        // ① 클러스터 원 및 숫자는 완전 숨김
+        // [2] 검색어 입력 시: 클러스터 원 숨김
         map.setFilter('clusters', ['==', ['get', 'city'], '___HIDE_ALL___']);
         map.setFilter('cluster-count', ['==', ['get', 'city'], '___HIDE_ALL___']);
 
-        // ② 개별 마커 레이어: 클러스터 노드가 아닌 모든 점 데이터 중 AI 필터 조건과 부합하는 점 선택
-        const pointFilter = [
-            "all",
-            ["!", ["has", "point_count"]], // 개별 데이터 점 선택
-            data.filter                    // AI가 생성한 'in' 필터 조건식
-        ];
+        // [3] 중첩 배열 방지 및 안전한 'all' 필터 조합 로직
+        let finalFilter;
 
-        map.setFilter('unclustered-point', pointFilter);
-        console.log("✅ 적용된 점 데이터 필터:", pointFilter);
+        // data.filter가 이미 ["all", ...] 형태인 경우 중첩 방지 처리
+        if (Array.isArray(data.filter) && data.filter[0] === 'all') {
+            // 기존 "all" 배열 내부의 조건식들만 가져와서 ["!", ["has", "point_count"]]와 병합
+            const innerConditions = data.filter.slice(1);
+            finalFilter = ["all", ["!", ["has", "point_count"]], ...innerConditions];
+        } else {
+            // 단순 조건식인 경우 (예: ["in", "여수", ["get", "city"]])
+            finalFilter = ["all", ["!", ["has", "point_count"]], data.filter];
+        }
+
+        map.setFilter('unclustered-point', finalFilter);
+        console.log("✅ 정제된 최종 MapLibre 필터:", finalFilter);
     }
 } catch (filterError) {
-    console.warn("⚠️ 필터 매칭 에러 발생, 기본 상태로 복구합니다.", filterError);
+    console.warn("⚠️ 필터 매칭 에러 우회 처리", filterError);
     map.setFilter('clusters', ['has', 'point_count']);
     map.setFilter('cluster-count', ['has', 'point_count']);
     map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
