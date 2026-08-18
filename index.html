@@ -267,33 +267,34 @@
                         speed: 1.2
                     });
                 }
-
+// =========================================================================
+// index.html 내 map.setFilter 처리 부분 수정
+// =========================================================================
 try {
     if (!data.filter || data.filter.length === 0) {
-        // 필터 조건이 없을 때 (전체 표시)
+        // [1] 검색 조건이 없을 때 (전체 보기): 클러스터링 정상 구동
         map.setFilter('clusters', ['has', 'point_count']);
         map.setFilter('cluster-count', ['has', 'point_count']);
         map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
     } else {
-        // 필터 조건이 존재할 때: MapLibre GL 조건 조합 방식 수정
-        // data.filter 예시: ["==", ["get", "city"], "여수시"]
+        // [2] 검색어 입력 시: 클러스터 완전 제거 및 개별 마커만 속성 필터링 표출
         
-        const clusterFilter = ["all", data.filter, ["has", "point_count"]];
-        const unclusteredFilter = ["all", data.filter, ["!", ["has", "point_count"]]];
+        // ① 클러스터 원 및 숫자는 화면에서 완전히 숨김 (거짓 조건 부여)
+        map.setFilter('clusters', ['==', ['get', 'city'], '___HIDE_ALL___']);
+        map.setFilter('cluster-count', ['==', ['get', 'city'], '___HIDE_ALL___']);
 
-        map.setFilter('clusters', clusterFilter);
-        map.setFilter('cluster-count', clusterFilter);
-        map.setFilter('unclustered-point', unclusteredFilter);
-        
-        console.log("✅ 적용된 MapLibre 필터:", unclusteredFilter);
+        // ② 개별 마커(unclustered-point) 레이어에만 LLM에서 넘어온 속성 필터 적용
+        map.setFilter('unclustered-point', data.filter);
+
+        console.log("✅ 검색 완료: 클러스터 제거 및 개별 마커 필터 적용:", data.filter);
     }
 } catch (filterError) {
-    console.warn("⚠️ 필터 적용 중 에러 발생, 기본 상태로 우회합니다.", filterError);
+    console.warn("⚠️ 필터 매칭 에러 발생, 기본 상태로 원복합니다.", filterError);
+    // 에러 발생 시 기본 전체 보기로 안전하게 우회
     map.setFilter('clusters', ['has', 'point_count']);
     map.setFilter('cluster-count', ['has', 'point_count']);
     map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
 }
-
             } else {
                 statusEl.innerText = "❌ 분석 실패: " + data.error;
             }
