@@ -130,8 +130,8 @@
     let currentMatchedFeatures = [];
     let activePopup = null;
 
-    const INITIAL_CENTER = [127.9780, 36.5665];
-    const INITIAL_ZOOM = 7;
+    const INITIAL_CENTER = [127.8, 35.8];
+    const INITIAL_ZOOM = 6.3;
 
     // 장소 명칭 추출 헬퍼 함수
     function getPoiName(props) {
@@ -290,14 +290,14 @@
         if (activePopup) activePopup.remove();
 
         const poi_nm = getPoiName(props);
-        const region = ((props.sido_nm || '') + ' ' + (props.sigungu_nm || '')).trim();
-        const category = props.mcate_cd_prefix3_nm || props.mcate_nm || '기타';
+        const category1 = props.mcate_cd_prefix3_nm || '기타';
+        const category2 =  props.mcate_nm || '기타';
         const address = props.address || props.addr || '주소 정보 없음';
 
         const popupHtml = `
             <div class="popup-title">📍 ${poi_nm}</div>
-            <div class="popup-info"><b>분류:</b> ${category}</div>
-            <div class="popup-info"><b>지역:</b> ${region || '지역 정보 없음'}</div>
+            <div class="popup-info"><b>대분류:</b> ${category1}</div>
+            <div class="popup-info"><b>소분류:</b> ${category2}</div>
             <div class="popup-info"><b>주소:</b> ${address}</div>
         `;
 
