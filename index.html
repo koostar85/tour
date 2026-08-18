@@ -73,7 +73,7 @@
 <script>
     const typeColors = {
         '역사/문화유산' : '#007cbf',
-        '자연/여기/관광명소': '#ff5252',
+        '자연/휴양/관광명소': '#ff5252',
         '여행/행사/안내': '#2ecc71'
     };
 
@@ -86,7 +86,7 @@
     });
 
     let map;
-    let rawGeoJsonData = null; // 원본 GeoJSON 메모리 저장용
+    let rawGeoJsonData = null;
 
     window.onload = function() {
         map = new maplibregl.Map({
@@ -111,7 +111,6 @@
         map.on('load', async () => {
             const GEOJSON_URL = "https://koostar85.github.io/tour/tourdata.geojson";
 
-            // GeoJSON 데이터를 직접 fetch하여 메모리에 저장
             try {
                 const res = await fetch(GEOJSON_URL);
                 rawGeoJsonData = await res.json();
@@ -159,7 +158,13 @@
                 source: 'my-gis-data',
                 filter: ['!', ['has', 'point_count']],
                 paint: {
-                    'circle-color': ['match', ['get', 'type'], '역사/문화유산', typeColors[역사/문화유산'], '자연/여기/관광명소', typeColors['자연/여기/관광명소'], '여행/행사/안내', typeColors['여행/행사/안내']],
+                    'circle-color': [
+                        'match', ['get', 'mcate_nm'],
+                        '역사/문화유산', typeColors['역사/문화유산'],
+                        '자연/휴양/관광명소', typeColors['자연/휴양/관광명소'],
+                        '여행/행사/안내', typeColors['여행/행사/안내'],
+                        '#999999' // 기본 색상
+                    ],
                     'circle-radius': 8, 
                     'circle-stroke-width': 1.5, 
                     'circle-stroke-color': '#fff'
@@ -184,20 +189,20 @@
                 });
             });
 
-            // 개별 지점 클릭 시 상세 팝업 표출
+            // 개별 지점 클릭 시 상세 팝업 표출 (문법 오류 및 변수명 수정 완료)
             map.on('click', 'unclustered-point', (e) => {
                 const coordinates = e.features[0].geometry.coordinates.slice();
                 const props = e.features[0].properties;
 
-                const title = props.poi_nm || '이름 없음';
-                const sido_nm = props.sido_nm props.address || '주소 정보 없음';
-                const mcate_nm  = props.mcate_nm || '기타';
-                const address = props.address || '주소 정보 없음';
+                const poi_nm = props.poi_nm || props.title || '이름 없음';
+                const region = (props.sido_nm || '') + ' ' + (props.sigungu_nm || '');
+                const mcate_nm = props.mcate_nm || '기타';
+                const address = props.address || props.addr || '주소 정보 없음';
 
                 const popupHtml = `
                     <div class="popup-title">📍 ${poi_nm}</div>
-                    <div class="popup-info"><b>소분류:</b> ${mcate_nm}</div>
-                    <div class="popup-info"><b>지역:</b> ${sido_nm"}</div>
+                    <div class="popup-info"><b>분류:</b> ${mcate_nm}</div>
+                    <div class="popup-info"><b>지역:</b> ${region.trim() || '지역 정보 없음'}</div>
                     <div class="popup-info"><b>주소:</b> ${address}</div>
                 `;
 
@@ -220,21 +225,30 @@
     });
     document.getElementById('send-btn').addEventListener('click', processAiCommand);
 
-    // 필터 조건 매칭 보조 함수 (부분 문자열 포함 매칭 지원)
+    // 필터 조건 매칭 보조 함수 (유연한 속성 비교)
     function evaluateCondition(properties, cond) {
         if (!Array.isArray(cond) || cond.length < 3) return true;
         const op = cond[0];
         
+        // 검색 대상 필드 확장 (city, sido_nm, sigungu_nm 모두 대응)
+        let rawPropKey = cond[1][1];
+        let targetValue = String(cond[2] || cond[1]);
+
         if (op === 'in') {
-            const targetStr = String(cond[1]);
-            const propVal = String(properties[cond[2][1]] || '');
-            return propVal.includes(targetStr) || targetStr.includes(propVal);
-        } else if (op === '==') {
-            const val = cond[2];
-            const propVal = properties[cond[1][1]];
-            return propVal == val;
+            targetValue = String(cond[1]);
+            rawPropKey = cond[2][1];
         }
-        return true;
+
+        // 유연한 속성값 탐색
+        let propVal = properties[rawPropKey];
+        if (!propVal) {
+            propVal = properties['poi_nm'] || properties['sido_nm'] || properties['sigungu_nm'] || properties['mcate_nm'] || '';
+        }
+        propVal = String(propVal);
+
+        const cleanTarget = targetValue.replace(/(시|군|구)$/, '');
+
+        return propVal.includes(cleanTarget) || cleanTarget.includes(propVal);
     }
 
     async function processAiCommand() {
@@ -276,34 +290,24 @@
                         map.setFilter('cluster-count', ['has', 'point_count']);
                         map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
                     } else {
-                        map.setFilter('clusters', ['==', ['get', 'city'], '___HIDE_ALL___']);
-                        map.setFilter('cluster-count', ['==', ['get', 'city'], '___HIDE_ALL___']);
-
-                        let finalFilter;
-                        if (Array.isArray(data.filter) && data.filter[0] === 'all') {
-                            const innerConditions = data.filter.slice(1);
-                            finalFilter = ["all", ["!", ["has", "point_count"]], ...innerConditions];
-                        } else {
-                            finalFilter = ["all", ["!", ["has", "point_count"]], data.filter];
-                        }
-
-                        map.setFilter('unclustered-point', finalFilter);
+                        map.setFilter('clusters', ['==', ['get', 'poi_nm'], '___HIDE_ALL___']);
+                        map.setFilter('cluster-count', ['==', ['get', 'poi_nm'], '___HIDE_ALL___']);
+                        map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
                     }
                 } catch (filterError) {
                     console.warn("⚠️ 필터 매칭 에러 우회 처리", filterError);
                 }
 
-                // 3. 메모리의 rawGeoJsonData를 활용해 확실한 결과 장소 리스트 추출
+                // 3. 메모리의 rawGeoJsonData를 활용해 장소 리스트 추출 (poi_nm 속성 대응)
                 let matchedFeatures = [];
                 if (rawGeoJsonData && rawGeoJsonData.features) {
                     matchedFeatures = rawGeoJsonData.features.filter(f => {
                         if (!data.filter) return true;
                         
-                        // all 배열 조건 파싱
                         if (data.filter[0] === 'all') {
                             const conditions = data.filter.slice(1);
                             return conditions.every(c => {
-                                if (c[0] === '!') return true; // point_count 필터 스킵
+                                if (c[0] === '!') return true;
                                 return evaluateCondition(f.properties, c);
                             });
                         } else {
@@ -312,7 +316,8 @@
                     });
                 }
 
-                const placeNames = [...new Set(matchedFeatures.map(f => f.properties.title || f.properties.name || '이름 없음'))];
+                // 속성명 poi_nm을 최우선으로 탐색
+                const placeNames = [...new Set(matchedFeatures.map(f => f.properties.poi_nm || f.properties.title || f.properties.name || '이름 없음'))];
 
                 let placeListHtml = '';
                 if (placeNames.length > 0) {
