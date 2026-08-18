@@ -25,7 +25,7 @@
         .status-box { 
             font-size: 13px; 
             color: #374151; 
-            max-height: 250px; 
+            max-height: 280px; 
             overflow-y: auto; 
             background: #f9fafb; 
             padding: 10px; 
@@ -45,7 +45,6 @@
         .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
         .legend-key { display: inline-block; border-radius: 50%; width: 10px; height: 10px; margin-right: 8px; flex-shrink: 0; }
         
-        /* 팝업 스타일링 디자인 */
         .maplibre-popup-content {
             padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.15);
             font-family: 'Malgun Gothic', sans-serif; min-width: 200px;
@@ -99,7 +98,7 @@
                 "sources": {
                     "osm-tiles": {
                         "type": "raster",
-                        "tiles": ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
+                        "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
                         "tileSize": 256,
                         "attribution": "© OpenStreetMap contributors"
                     }
@@ -113,16 +112,15 @@
         map.on('load', () => {
             const GEOJSON_URL = "https://koostar85.github.io/tour/tour.geojson";
 
-            // GeoJSON 소스 등록 (클러스터 옵션 활성화)
             map.addSource('my-gis-data', {
                 type: 'geojson',
                 data: GEOJSON_URL,
                 cluster: true,            
-                clusterMaxZoom: 12, // 🔍 이 레벨 이상으로 확대하면 클러스터가 깨지고 개별 마커가 튀어나옵니다.
+                clusterMaxZoom: 12,
                 clusterRadius: 50         
             });
 
-// 1. 클러스터(모여있는 원) 레이어
+            // 1. 클러스터 레이어
             map.addLayer({
                 id: 'clusters',
                 type: 'circle',
@@ -134,7 +132,7 @@
                 }
             });
 
-            // 2. 클러스터 내부 숫자 텍스트 레이어
+            // 2. 클러스터 숫자 레이어
             map.addLayer({
                 id: 'cluster-count',
                 type: 'symbol',
@@ -145,7 +143,6 @@
                     'text-size': 12,
                     'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular']
                 }
-                // (tip: 레이어간 간섭을 방지하기 위해 심볼 레이어 클릭은 클러스터 원 레이어가 일괄 흡수하도록 설계했습니다.)
             });
 
             // 3. 개별 점 레이어
@@ -162,52 +159,34 @@
                 }
             });
 
-            // 🌟 [정밀 패치 완료] 클러스터 원을 누르면 수학적으로 중심점 좌표를 계산해 그 지역으로 부드럽게 확대 진입합니다.
+            // 클러스터 클릭 시 확대
             map.on('click', 'clusters', (e) => {
                 const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
                 if (!features.length) return;
                 
                 const clusterId = features[0].properties.cluster_id;
-                // 클릭한 픽셀의 정확한 지도상 지리적 위경도 좌표 추출
                 const coordinates = e.lngLat; 
 
                 map.getSource('my-gis-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
                     if (err) return;
-                    
-                    // 다음 단계 마커가 다 보일 수 있도록 계산된 줌 레벨 혹은 한 레벨 더 깊게 화면을 비행(easeTo)시킵니다.
                     map.easeTo({
                         center: coordinates,
                         zoom: Math.max(zoom, map.getZoom() + 1.5),
-                        duration: 600 // 부드러운 움직임 속도 (0.6초)
-                    });
-                });
-            });
-        
-            // 🌟 [추가 기능 1] 클러스터 원을 누르면 그 지역으로 쏙 확대 진입
-            map.on('click', 'clusters', (e) => {
-                const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
-                const clusterId = features[0].properties.cluster_id;
-                map.getSource('my-gis-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
-                    if (err) return;
-                    map.easeTo({
-                        center: features[0].geometry.coordinates,
-                        zoom: zoom + 0.5
+                        duration: 600
                     });
                 });
             });
 
-            // 🌟 [추가 기능 2] 하나의 점(마커)을 찍으면 속성정보 팝업창을 호출
+            // 개별 지점 클릭 시 상세 팝업 표출
             map.on('click', 'unclustered-point', (e) => {
                 const coordinates = e.features[0].geometry.coordinates.slice();
                 const props = e.features[0].properties;
 
-                // 데이터 정제 (정보 누락 방지 예외 처리)
                 const title = props.title || '이름 없음';
                 const city = props.city || '정보 없음';
                 const type = props.type || '기타';
                 const place = props.place || props.address || '주소 정보 없음';
 
-                // 말풍선 팝업 HTML 구조 디자인
                 const popupHtml = `
                     <div class="popup-title">📍 ${title}</div>
                     <div class="popup-info"><b>분류:</b> ${type}</div>
@@ -215,14 +194,13 @@
                     <div class="popup-info"><b>주소:</b> ${place}</div>
                 `;
 
-                // 팝업 생성 및 지도 부착
                 new maplibregl.Popup()
                     .setLngLat(coordinates)
                     .setHTML(popupHtml)
                     .addTo(map);
             });
 
-            // 마우스 커서 스타일 세팅 (클릭 가능한 요소임을 안내)
+            // 마우스 커서 제어
             map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
             map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
             map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -257,8 +235,7 @@
             const data = await response.json();
 
             if (data.success) {
-                statusEl.innerText = data.message;
-
+                // 1. 시점(카메라) 이동
                 if (data.center && Array.isArray(data.center)) {
                     map.flyTo({
                         center: data.center,
@@ -267,46 +244,65 @@
                         speed: 1.2
                     });
                 }
-// =========================================================================
-// index.html 내 processAiCommand() 지점의 map.setFilter 부분 수정
-// =========================================================================
-// =========================================================================
-// index.html 내 processAiCommand() 내 setFilter 적용 로직 수정
-// =========================================================================
-try {
-    if (!data.filter || data.filter.length === 0) {
-        // [1] 검색어가 없는 기본 상태: 클러스터링으로 표현
-        map.setFilter('clusters', ['has', 'point_count']);
-        map.setFilter('cluster-count', ['has', 'point_count']);
-        map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
-    } else {
-        // [2] 검색어 입력 시: 클러스터 원 숨김
-        map.setFilter('clusters', ['==', ['get', 'city'], '___HIDE_ALL___']);
-        map.setFilter('cluster-count', ['==', ['get', 'city'], '___HIDE_ALL___']);
 
-        // [3] 중첩 배열 방지 및 안전한 'all' 필터 조합 로직
-        let finalFilter;
+                // 2. 필터 적용 및 클러스터 해제
+                try {
+                    if (!data.filter || data.filter.length === 0) {
+                        map.setFilter('clusters', ['has', 'point_count']);
+                        map.setFilter('cluster-count', ['has', 'point_count']);
+                        map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+                    } else {
+                        map.setFilter('clusters', ['==', ['get', 'city'], '___HIDE_ALL___']);
+                        map.setFilter('cluster-count', ['==', ['get', 'city'], '___HIDE_ALL___']);
 
-        // data.filter가 이미 ["all", ...] 형태인 경우 중첩 방지 처리
-        if (Array.isArray(data.filter) && data.filter[0] === 'all') {
-            // 기존 "all" 배열 내부의 조건식들만 가져와서 ["!", ["has", "point_count"]]와 병합
-            const innerConditions = data.filter.slice(1);
-            finalFilter = ["all", ["!", ["has", "point_count"]], ...innerConditions];
-        } else {
-            // 단순 조건식인 경우 (예: ["in", "여수", ["get", "city"]])
-            finalFilter = ["all", ["!", ["has", "point_count"]], data.filter];
-        }
+                        let finalFilter;
+                        if (Array.isArray(data.filter) && data.filter[0] === 'all') {
+                            const innerConditions = data.filter.slice(1);
+                            finalFilter = ["all", ["!", ["has", "point_count"]], ...innerConditions];
+                        } else {
+                            finalFilter = ["all", ["!", ["has", "point_count"]], data.filter];
+                        }
 
-        map.setFilter('unclustered-point', finalFilter);
-        console.log("✅ 정제된 최종 MapLibre 필터:", finalFilter);
-    }
-} catch (filterError) {
-    console.warn("⚠️ 필터 매칭 에러 우회 처리", filterError);
-    map.setFilter('clusters', ['has', 'point_count']);
-    map.setFilter('cluster-count', ['has', 'point_count']);
-    map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
-}
-             } else {
+                        map.setFilter('unclustered-point', finalFilter);
+                        console.log("✅ 적용된 최종 MapLibre 필터식:", JSON.stringify(finalFilter));
+                    }
+                } catch (filterError) {
+                    console.warn("⚠️ 필터 매칭 에러 우회 처리", filterError);
+                    map.setFilter('clusters', ['has', 'point_count']);
+                    map.setFilter('cluster-count', ['has', 'point_count']);
+                    map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+                }
+
+                // 3. 검색된 장소 이름 추출 및 Status 상자에 텍스트 출력
+                setTimeout(() => {
+                    const matchedFeatures = map.querySourceFeatures('my-gis-data', {
+                        filter: data.filter || null
+                    });
+
+                    const placeNames = [...new Set(matchedFeatures.map(f => f.properties.title || '이름 없음'))];
+
+                    let placeListHtml = '';
+                    if (placeNames.length > 0) {
+                        const displayList = placeNames.slice(0, 10);
+                        placeListHtml = `<ul style="margin: 5px 0; padding-left: 18px; font-size: 12px; color: #4b5563;">` +
+                            displayList.map(name => `<li>📍 ${name}</li>`).join('') +
+                            `</ul>`;
+                        
+                        if (placeNames.length > 10) {
+                            placeListHtml += `<div style="font-size: 11px; color: #888; margin-left: 5px;">...외 ${placeNames.length - 10}곳 더보기</div>`;
+                        }
+                    } else {
+                        placeListHtml = `<div style="font-size: 12px; color: #ef4444; margin-top: 5px;">검색된 장소가 없습니다.</div>`;
+                    }
+
+                    statusEl.innerHTML = `
+                        🤖 <b>AI 분석 메시지:</b><br>${data.message}<br><br>
+                        📊 <b>검색된 장소 (총 ${placeNames.length}곳):</b>
+                        ${placeListHtml}
+                    `;
+                }, 300);
+
+            } else {
                 statusEl.innerText = "❌ 분석 실패: " + data.error;
             }
         } catch (error) {
