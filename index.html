@@ -14,6 +14,7 @@
             background: rgba(255, 255, 255, 0.95); padding: 15px;
             border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 360px;
             font-family: 'Malgun Gothic', sans-serif;
+            max-height: 90vh; display: flex; flex-direction: column;
         }
         .ai-container h3 { margin: 0 0 10px 0; font-size: 16px; color: #333; }
         .input-group { display: flex; gap: 5px; margin-bottom: 8px; }
@@ -27,7 +28,6 @@
         .status-box { 
             font-size: 13px; 
             color: #374151; 
-            max-height: 280px; 
             overflow-y: auto; 
             background: #f9fafb; 
             padding: 10px; 
@@ -35,6 +35,43 @@
             border: 1px solid #f3f4f6;
             white-space: pre-wrap;
             line-height: 1.6;
+            flex: 1;
+        }
+
+        /* 검색 장소 리스트 스타일 */
+        .place-list {
+            list-style: none;
+            padding: 0;
+            margin: 8px 0 0 0;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: #ffffff;
+        }
+        .place-item {
+            padding: 8px 10px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .place-item:last-child { border-bottom: none; }
+        .place-item:hover {
+            background: #e8f0fe;
+            color: #1a73e8;
+            font-weight: bold;
+        }
+        .place-item .category-tag {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #f3f4f6;
+            color: #6b7280;
+            font-weight: normal;
         }
         
         .legend {
@@ -93,6 +130,9 @@
 
     let map;
     let rawGeoJsonData = null;
+    let currentMatchedFeatures = []; // 검색된 결과 데이터 전역 저장
+    let activePopup = null; // 활성화된 팝업 참조
+
     const INITIAL_CENTER = [127.9780, 36.5665];
     const INITIAL_ZOOM = 7;
 
@@ -159,7 +199,7 @@
                 }
             });
 
-            // 3. 개별 점 레이어 (mcate_cd_prefix3_nm에 따른 표현)
+            // 3. 개별 점 레이어
             map.addLayer({
                 id: 'unclustered-point',
                 type: 'circle',
@@ -202,23 +242,7 @@
             map.on('click', 'unclustered-point', (e) => {
                 const coordinates = e.features[0].geometry.coordinates.slice();
                 const props = e.features[0].properties;
-
-                const poi_nm = props.poi_nm || props.title || '이름 없음';
-                const region = (props.sido_nm || '') + ' ' + (props.sigungu_nm || '');
-                const category = props.mcate_cd_prefix3_nm || props.mcate_nm || '기타';
-                const address = props.address || props.addr || '주소 정보 없음';
-
-                const popupHtml = `
-                    <div class="popup-title">📍 ${poi_nm}</div>
-                    <div class="popup-info"><b>분류:</b> ${category}</div>
-                    <div class="popup-info"><b>지역:</b> ${region.trim() || '지역 정보 없음'}</div>
-                    <div class="popup-info"><b>주소:</b> ${address}</div>
-                `;
-
-                new maplibregl.Popup()
-                    .setLngLat(coordinates)
-                    .setHTML(popupHtml)
-                    .addTo(map);
+                showPopup(coordinates, props);
             });
 
             // 마우스 커서 제어
@@ -228,6 +252,28 @@
             map.on('mouseleave', 'unclustered-point', () => { map.getCanvas().style.cursor = ''; });
         });
     };
+
+    // 팝업 표출 전용 함수
+    function showPopup(coordinates, props) {
+        if (activePopup) activePopup.remove();
+
+        const poi_nm = props.poi_nm || props.title || '이름 없음';
+        const region = (props.sido_nm || '') + ' ' + (props.sigungu_nm || '');
+        const category = props.mcate_cd_prefix3_nm || props.mcate_nm || '기타';
+        const address = props.address || props.addr || '주소 정보 없음';
+
+        const popupHtml = `
+            <div class="popup-title">📍 ${poi_nm}</div>
+            <div class="popup-info"><b>분류:</b> ${category}</div>
+            <div class="popup-info"><b>지역:</b> ${region.trim() || '지역 정보 없음'}</div>
+            <div class="popup-info"><b>주소:</b> ${address}</div>
+        `;
+
+        activePopup = new maplibregl.Popup()
+            .setLngLat(coordinates)
+            .setHTML(popupHtml)
+            .addTo(map);
+    }
 
     document.getElementById('gis-command').addEventListener('keypress', (e) => {
         if(e.key === 'Enter') processAiCommand();
@@ -292,9 +338,9 @@
                 }
 
                 // 2. 검색 조건 매칭 데이터 필터링
-                let matchedFeatures = [];
+                currentMatchedFeatures = [];
                 if (rawGeoJsonData && rawGeoJsonData.features) {
-                    matchedFeatures = rawGeoJsonData.features.filter(f => {
+                    currentMatchedFeatures = rawGeoJsonData.features.filter(f => {
                         if (!data.filter) return true;
                         
                         if (data.filter[0] === 'all') {
@@ -309,13 +355,12 @@
                     });
                 }
 
-                // 3. 지도 데이터 업데이트 (검색 결과만 카테고리 색상점으로 표시)
+                // 3. 지도 데이터 업데이트
                 const filteredGeoJson = {
                     type: 'FeatureCollection',
-                    features: matchedFeatures
+                    features: currentMatchedFeatures
                 };
 
-                // 클러스터를 숨기고 unclustered-point에 카테고리 색상 규칙 보장
                 map.setLayoutProperty('clusters', 'visibility', 'none');
                 map.setLayoutProperty('cluster-count', 'visibility', 'none');
                 map.setFilter('unclustered-point', null);
@@ -329,29 +374,35 @@
                     typeColors['기타']
                 ]);
 
-                // 데이터셋 변경 적용
                 map.getSource('my-gis-data').setData(filteredGeoJson);
 
-                // 4. 상태창 업데이트
-                const placeNames = [...new Set(matchedFeatures.map(f => f.properties.poi_nm || f.properties.title || f.properties.name || '이름 없음'))];
-
+                // 4. 상태창 메시지 및 전체 장소 리스트 생성
                 let placeListHtml = '';
-                if (placeNames.length > 0) {
-                    const displayList = placeNames.slice(0, 10);
-                    placeListHtml = `<ul style="margin: 5px 0; padding-left: 18px; font-size: 12px; color: #4b5563;">` +
-                        displayList.map(name => `<li>📍 ${name}</li>`).join('') +
-                        `</ul>`;
-                    
-                    if (placeNames.length > 10) {
-                        placeListHtml += `<div style="font-size: 11px; color: #888; margin-left: 5px;">...외 ${placeNames.length - 10}곳 더보기</div>`;
-                    }
+                if (currentMatchedFeatures.length > 0) {
+                    const listItemsHtml = currentMatchedFeatures.map((f, idx) => {
+                        const props = f.properties;
+                        const poiName = props.poi_nm || props.title || '이름 없음';
+                        const category = props.mcate_cd_prefix3_nm || '기타';
+                        const coords = f.geometry.coordinates;
+
+                        return `
+                            <li class="place-item" onclick="moveToLocation(${coords[0]}, ${coords[1]}, ${idx})">
+                                <span>📍 ${poiName}</span>
+                                <span class="category-tag">${category}</span>
+                            </li>
+                        `;
+                    }).join('');
+
+                    placeListHtml = `
+                        <div style="font-weight: bold; margin-top: 8px;">📊 검색된 장소 목록 (총 ${currentMatchedFeatures.length}곳):</div>
+                        <ul class="place-list">${listItemsHtml}</ul>
+                    `;
                 } else {
-                    placeListHtml = `<div style="font-size: 12px; color: #ef4444; margin-top: 5px;">검색 조건에 맞는 장소가 없습니다.</div>`;
+                    placeListHtml = `<div style="font-size: 12px; color: #ef4444; margin-top: 8px;">검색 조건에 맞는 장소가 없습니다.</div>`;
                 }
 
                 statusEl.innerHTML = `
-                    🤖 <b>AI 분석 메시지:</b><br>${data.message}<br><br>
-                    📊 <b>검색된 장소 (총 ${placeNames.length}곳):</b>
+                    🤖 <b>AI 분석 메시지:</b><br>${data.message}<br>
                     ${placeListHtml}
                 `;
 
@@ -366,13 +417,29 @@
         }
     }
 
+    // 장소 리스트 클릭 시 지도 이동 및 팝업 출력 함수
+    function moveToLocation(lng, lat, featureIndex) {
+        map.flyTo({
+            center: [lng, lat],
+            zoom: 15,
+            essential: true,
+            speed: 1.5
+        });
+
+        if (currentMatchedFeatures[featureIndex]) {
+            const feature = currentMatchedFeatures[featureIndex];
+            showPopup([lng, lat], feature.properties);
+        }
+    }
+
     // 초기화 함수
     function resetFilter() {
         if (!rawGeoJsonData) return;
 
+        if (activePopup) activePopup.remove();
         document.getElementById('gis-command').value = '';
+        currentMatchedFeatures = [];
 
-        // 전체 데이터 및 클러스터 복원
         map.getSource('my-gis-data').setData(rawGeoJsonData);
         map.setLayoutProperty('clusters', 'visibility', 'visible');
         map.setLayoutProperty('cluster-count', 'visibility', 'visible');
