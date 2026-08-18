@@ -38,7 +38,6 @@
             flex: 1;
         }
 
-        /* 검색 장소 리스트 스타일 */
         .place-list {
             list-style: none;
             padding: 0;
@@ -134,10 +133,15 @@
     const INITIAL_CENTER = [127.9780, 36.5665];
     const INITIAL_ZOOM = 7;
 
-    // 장소명 가져오기 헬퍼 함수
+    // 장소 명칭 추출 헬퍼 함수
     function getPoiName(props) {
-        if (!props) return '이름 없음';
-        return props.poi_nm || props.title || props.name || props.mcate_nm || '이름 없음';
+        if (!props) return '관광지점';
+        const name = props.poi_nm || props.title || props.name || props.spot_nm || props.mcate_nm;
+        if (name && String(name).trim() !== '') return String(name).trim();
+        
+        const region = props.sigungu_nm || props.sido_nm || '';
+        const category = props.mcate_cd_prefix3_nm || props.mcate_nm || '관광명소';
+        return region ? `[${region}] ${category}` : '관광명소';
     }
 
     window.onload = function() {
@@ -170,7 +174,8 @@
                 console.error("GeoJSON 로드 실패:", err);
             }
 
-            map.addSource('my-gis-data', {
+            // 1. 초기 전체 클러스터용 소스
+            map.addSource('default-gis-source', {
                 type: 'geojson',
                 data: rawGeoJsonData || GEOJSON_URL,
                 cluster: true,            
@@ -178,11 +183,17 @@
                 clusterRadius: 50         
             });
 
-            // 1. 클러스터 레이어
+            // 2. 검색 전용 클러스터 미적용 독립 소스
+            map.addSource('search-only-source', {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [] }
+            });
+
+            // 초기 전체 지점 클러스터 레이어
             map.addLayer({
-                id: 'clusters',
+                id: 'default-clusters',
                 type: 'circle',
-                source: 'my-gis-data',
+                source: 'default-gis-source',
                 filter: ['has', 'point_count'],
                 paint: {
                     'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 15, '#f1f075', 50, '#f28cb1'],
@@ -190,11 +201,10 @@
                 }
             });
 
-            // 2. 클러스터 숫자 레이어
             map.addLayer({
-                id: 'cluster-count',
+                id: 'default-cluster-count',
                 type: 'symbol',
-                source: 'my-gis-data',
+                source: 'default-gis-source',
                 filter: ['has', 'point_count'],
                 layout: { 
                     'text-field': '{point_count}', 
@@ -203,11 +213,10 @@
                 }
             });
 
-            // 3. 개별 점 레이어
             map.addLayer({
-                id: 'unclustered-point',
+                id: 'default-unclustered-point',
                 type: 'circle',
-                source: 'my-gis-data',
+                source: 'default-gis-source',
                 filter: ['!', ['has', 'point_count']],
                 paint: {
                     'circle-color': [
@@ -224,34 +233,56 @@
                 }
             });
 
-            map.on('click', 'clusters', (e) => {
-                const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+            // ⭐️ 검색 결과 전용 표출 레이어 (오직 검색된 점만 렌더링)
+            map.addLayer({
+                id: 'search-results-layer',
+                type: 'circle',
+                source: 'search-only-source',
+                layout: { 'visibility': 'none' },
+                paint: {
+                    'circle-color': [
+                        'match',
+                        ['coalesce', ['get', 'mcate_cd_prefix3_nm'], ''],
+                        '역사/문화유산', typeColors['역사/문화유산'],
+                        '자연/휴양/관광명소', typeColors['자연/휴양/관광명소'],
+                        '여행/행사/안내', typeColors['여행/행사/안내'],
+                        typeColors['기타']
+                    ],
+                    'circle-radius': 9, 
+                    'circle-stroke-width': 2, 
+                    'circle-stroke-color': '#ffffff'
+                }
+            });
+
+            // 클러스터 클릭 이벤트
+            map.on('click', 'default-clusters', (e) => {
+                const features = map.queryRenderedFeatures(e.point, { layers: ['default-clusters'] });
                 if (!features.length) return;
                 
                 const clusterId = features[0].properties.cluster_id;
-                const coordinates = e.lngLat; 
-
-                map.getSource('my-gis-data').getClusterExpansionZoom(clusterId, (err, zoom) => {
+                map.getSource('default-gis-source').getClusterExpansionZoom(clusterId, (err, zoom) => {
                     if (err) return;
-                    map.easeTo({
-                        center: coordinates,
-                        zoom: Math.max(zoom, map.getZoom() + 1.5),
-                        duration: 600
-                    });
+                    map.easeTo({ center: e.lngLat, zoom: Math.max(zoom, map.getZoom() + 1.5), duration: 600 });
                 });
             });
 
-            map.on('click', 'unclustered-point', (e) => {
-                if (!e.features || !e.features.length) return;
-                const coordinates = e.features[0].geometry.coordinates.slice();
-                const props = e.features[0].properties;
-                showPopup(coordinates, props);
+            // 마커 클릭 팝업 핸들러
+            map.on('click', 'default-unclustered-point', (e) => {
+                if (e.features && e.features.length) showPopup(e.features[0].geometry.coordinates.slice(), e.features[0].properties);
+            });
+            map.on('click', 'search-results-layer', (e) => {
+                if (e.features && e.features.length) showPopup(e.features[0].geometry.coordinates.slice(), e.features[0].properties);
             });
 
-            map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
-            map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
-            map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer'; });
-            map.on('mouseleave', 'unclustered-point', () => { map.getCanvas().style.cursor = ''; });
+            // 커서 포인터 설정
+            const setPointer = () => map.getCanvas().style.cursor = 'pointer';
+            const resetPointer = () => map.getCanvas().style.cursor = '';
+            map.on('mouseenter', 'default-clusters', setPointer);
+            map.on('mouseleave', 'default-clusters', resetPointer);
+            map.on('mouseenter', 'default-unclustered-point', setPointer);
+            map.on('mouseleave', 'default-unclustered-point', resetPointer);
+            map.on('mouseenter', 'search-results-layer', setPointer);
+            map.on('mouseleave', 'search-results-layer', resetPointer);
         });
     };
 
@@ -296,7 +327,7 @@
 
         let propVal = properties[rawPropKey];
         if (!propVal) {
-            propVal = getPoiName(properties) || properties['sido_nm'] || properties['sigungu_nm'] || properties['mcate_cd_prefix3_nm'] || '';
+            propVal = getPoiName(properties) + ' ' + (properties['sido_nm'] || '') + ' ' + (properties['sigungu_nm'] || '') + ' ' + (properties['mcate_cd_prefix3_nm'] || '');
         }
         propVal = String(propVal);
 
@@ -344,20 +375,19 @@
                     });
                 }
 
-                const filteredGeoJson = {
+                // 1. 전체 데이터 레이어 일괄 비활성화 (검색 외 모든 점 은닉)
+                map.setLayoutProperty('default-clusters', 'visibility', 'none');
+                map.setLayoutProperty('default-cluster-count', 'visibility', 'none');
+                map.setLayoutProperty('default-unclustered-point', 'visibility', 'none');
+
+                // 2. 검색 결과 전용 소스에 필터링된 데이터만 바인딩 및 노출
+                map.getSource('search-only-source').setData({
                     type: 'FeatureCollection',
                     features: currentMatchedFeatures
-                };
+                });
+                map.setLayoutProperty('search-results-layer', 'visibility', 'visible');
 
-                // 클러스터 숨김 처리 및 포인트 개별 표출 필터 해제
-                map.setLayoutProperty('clusters', 'visibility', 'none');
-                map.setLayoutProperty('cluster-count', 'visibility', 'none');
-                map.setFilter('unclustered-point', null);
-
-                // 지점 데이터 갱신
-                map.getSource('my-gis-data').setData(filteredGeoJson);
-
-                // 검색된 모든 점이 화면 한눈에 들어오도록 이동
+                // 3. 검색된 모든 지점이 한눈에 들어오도록 화면 경계 자동 연산
                 if (currentMatchedFeatures.length > 0) {
                     const bounds = new maplibregl.LngLatBounds();
                     
@@ -368,9 +398,8 @@
                     });
 
                     if (currentMatchedFeatures.length === 1) {
-                        const singleCoords = currentMatchedFeatures[0].geometry.coordinates;
                         map.flyTo({
-                            center: singleCoords,
+                            center: currentMatchedFeatures[0].geometry.coordinates,
                             zoom: 14,
                             essential: true
                         });
@@ -389,7 +418,7 @@
                     });
                 }
 
-                // 장소 리스트 UI 생성
+                // 4. 하단 상태창 리스트 업데이트
                 let placeListHtml = '';
                 if (currentMatchedFeatures.length > 0) {
                     const listItemsHtml = currentMatchedFeatures.map((f, idx) => {
@@ -439,8 +468,7 @@
         });
 
         if (currentMatchedFeatures[featureIndex]) {
-            const feature = currentMatchedFeatures[featureIndex];
-            showPopup([lng, lat], feature.properties);
+            showPopup([lng, lat], currentMatchedFeatures[featureIndex].properties);
         }
     }
 
@@ -451,10 +479,14 @@
         document.getElementById('gis-command').value = '';
         currentMatchedFeatures = [];
 
-        map.getSource('my-gis-data').setData(rawGeoJsonData);
-        map.setLayoutProperty('clusters', 'visibility', 'visible');
-        map.setLayoutProperty('cluster-count', 'visibility', 'visible');
-        map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
+        // 1. 검색 전용 레이어 은닉
+        map.setLayoutProperty('search-results-layer', 'visibility', 'none');
+        map.getSource('search-only-source').setData({ type: 'FeatureCollection', features: [] });
+
+        // 2. 전체 지도 데이터 복원
+        map.setLayoutProperty('default-clusters', 'visibility', 'visible');
+        map.setLayoutProperty('default-cluster-count', 'visibility', 'visible');
+        map.setLayoutProperty('default-unclustered-point', 'visibility', 'visible');
 
         map.flyTo({
             center: INITIAL_CENTER,
