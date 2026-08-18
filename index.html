@@ -88,6 +88,7 @@
     });
 
     let map;
+    let rawGeoJsonData = null; // 원본 GeoJSON 메모리 저장용
 
     window.onload = function() {
         map = new maplibregl.Map({
@@ -109,12 +110,20 @@
             zoom: 7
         });
 
-        map.on('load', () => {
+        map.on('load', async () => {
             const GEOJSON_URL = "https://koostar85.github.io/tour/tour.geojson";
+
+            // GeoJSON 데이터를 직접 fetch하여 메모리에 저장
+            try {
+                const res = await fetch(GEOJSON_URL);
+                rawGeoJsonData = await res.json();
+            } catch (err) {
+                console.error("GeoJSON 로드 실패:", err);
+            }
 
             map.addSource('my-gis-data', {
                 type: 'geojson',
-                data: GEOJSON_URL,
+                data: rawGeoJsonData || GEOJSON_URL,
                 cluster: true,            
                 clusterMaxZoom: 12,
                 clusterRadius: 50         
@@ -213,6 +222,23 @@
     });
     document.getElementById('send-btn').addEventListener('click', processAiCommand);
 
+    // 필터 조건 매칭 보조 함수 (부분 문자열 포함 매칭 지원)
+    function evaluateCondition(properties, cond) {
+        if (!Array.isArray(cond) || cond.length < 3) return true;
+        const op = cond[0];
+        
+        if (op === 'in') {
+            const targetStr = String(cond[1]);
+            const propVal = String(properties[cond[2][1]] || '');
+            return propVal.includes(targetStr) || targetStr.includes(propVal);
+        } else if (op === '==') {
+            const val = cond[2];
+            const propVal = properties[cond[1][1]];
+            return propVal == val;
+        }
+        return true;
+    }
+
     async function processAiCommand() {
         const commandInput = document.getElementById('gis-command');
         const btn = document.getElementById('send-btn');
@@ -235,7 +261,7 @@
             const data = await response.json();
 
             if (data.success) {
-                // 1. 시점(카메라) 이동
+                // 1. 카메라 이동
                 if (data.center && Array.isArray(data.center)) {
                     map.flyTo({
                         center: data.center,
@@ -245,7 +271,7 @@
                     });
                 }
 
-                // 2. 필터 적용 및 클러스터 해제
+                // 2. MapLibre 필터 적용
                 try {
                     if (!data.filter || data.filter.length === 0) {
                         map.setFilter('clusters', ['has', 'point_count']);
@@ -264,43 +290,51 @@
                         }
 
                         map.setFilter('unclustered-point', finalFilter);
-                        console.log("✅ 적용된 최종 MapLibre 필터식:", JSON.stringify(finalFilter));
                     }
                 } catch (filterError) {
                     console.warn("⚠️ 필터 매칭 에러 우회 처리", filterError);
-                    map.setFilter('clusters', ['has', 'point_count']);
-                    map.setFilter('cluster-count', ['has', 'point_count']);
-                    map.setFilter('unclustered-point', ['!', ['has', 'point_count']]);
                 }
 
-                // 3. 검색된 장소 이름 추출 및 Status 상자에 텍스트 출력
-                setTimeout(() => {
-                    const matchedFeatures = map.querySourceFeatures('my-gis-data', {
-                        filter: data.filter || null
-                    });
-
-                    const placeNames = [...new Set(matchedFeatures.map(f => f.properties.title || '이름 없음'))];
-
-                    let placeListHtml = '';
-                    if (placeNames.length > 0) {
-                        const displayList = placeNames.slice(0, 10);
-                        placeListHtml = `<ul style="margin: 5px 0; padding-left: 18px; font-size: 12px; color: #4b5563;">` +
-                            displayList.map(name => `<li>📍 ${name}</li>`).join('') +
-                            `</ul>`;
+                // 3. 메모리의 rawGeoJsonData를 활용해 확실한 결과 장소 리스트 추출
+                let matchedFeatures = [];
+                if (rawGeoJsonData && rawGeoJsonData.features) {
+                    matchedFeatures = rawGeoJsonData.features.filter(f => {
+                        if (!data.filter) return true;
                         
-                        if (placeNames.length > 10) {
-                            placeListHtml += `<div style="font-size: 11px; color: #888; margin-left: 5px;">...외 ${placeNames.length - 10}곳 더보기</div>`;
+                        // all 배열 조건 파싱
+                        if (data.filter[0] === 'all') {
+                            const conditions = data.filter.slice(1);
+                            return conditions.every(c => {
+                                if (c[0] === '!') return true; // point_count 필터 스킵
+                                return evaluateCondition(f.properties, c);
+                            });
+                        } else {
+                            return evaluateCondition(f.properties, data.filter);
                         }
-                    } else {
-                        placeListHtml = `<div style="font-size: 12px; color: #ef4444; margin-top: 5px;">검색된 장소가 없습니다.</div>`;
-                    }
+                    });
+                }
 
-                    statusEl.innerHTML = `
-                        🤖 <b>AI 분석 메시지:</b><br>${data.message}<br><br>
-                        📊 <b>검색된 장소 (총 ${placeNames.length}곳):</b>
-                        ${placeListHtml}
-                    `;
-                }, 300);
+                const placeNames = [...new Set(matchedFeatures.map(f => f.properties.title || f.properties.name || '이름 없음'))];
+
+                let placeListHtml = '';
+                if (placeNames.length > 0) {
+                    const displayList = placeNames.slice(0, 10);
+                    placeListHtml = `<ul style="margin: 5px 0; padding-left: 18px; font-size: 12px; color: #4b5563;">` +
+                        displayList.map(name => `<li>📍 ${name}</li>`).join('') +
+                        `</ul>`;
+                    
+                    if (placeNames.length > 10) {
+                        placeListHtml += `<div style="font-size: 11px; color: #888; margin-left: 5px;">...외 ${placeNames.length - 10}곳 더보기</div>`;
+                    }
+                } else {
+                    placeListHtml = `<div style="font-size: 12px; color: #ef4444; margin-top: 5px;">검색 조건에 맞는 장소가 없습니다.</div>`;
+                }
+
+                statusEl.innerHTML = `
+                    🤖 <b>AI 분석 메시지:</b><br>${data.message}<br><br>
+                    📊 <b>검색된 장소 (총 ${placeNames.length}곳):</b>
+                    ${placeListHtml}
+                `;
 
             } else {
                 statusEl.innerText = "❌ 분석 실패: " + data.error;
