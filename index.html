@@ -111,15 +111,13 @@
 </div>
 
 <script>
-    // 카테고리(mcate_cd_prefix3_nm)별 색상 매핑
     const typeColors = {
-        '역사/문화유산': '#007cbf',     // 파란색
-        '자연/휴양/관광명소': '#ff5252', // 빨간색
-        '여행/행사/안내': '#2ecc71',     // 초록색
-        '기타': '#95a5a6'              // 회색
+        '역사/문화유산': '#007cbf',
+        '자연/휴양/관광명소': '#ff5252',
+        '여행/행사/안내': '#2ecc71',
+        '기타': '#95a5a6'
     };
 
-    // 범례 생성
     const legendEl = document.getElementById('map-legend');
     Object.keys(typeColors).forEach(type => {
         const item = document.createElement('div');
@@ -130,11 +128,17 @@
 
     let map;
     let rawGeoJsonData = null;
-    let currentMatchedFeatures = []; // 검색된 결과 데이터 전역 저장
-    let activePopup = null; // 활성화된 팝업 참조
+    let currentMatchedFeatures = [];
+    let activePopup = null;
 
     const INITIAL_CENTER = [127.9780, 36.5665];
     const INITIAL_ZOOM = 7;
+
+    // 장소명 가져오기 헬퍼 함수
+    function getPoiName(props) {
+        if (!props) return '이름 없음';
+        return props.poi_nm || props.title || props.name || props.mcate_nm || '이름 없음';
+    }
 
     window.onload = function() {
         map = new maplibregl.Map({
@@ -220,7 +224,6 @@
                 }
             });
 
-            // 클러스터 클릭 시 확대
             map.on('click', 'clusters', (e) => {
                 const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
                 if (!features.length) return;
@@ -238,14 +241,13 @@
                 });
             });
 
-            // 개별 지점 클릭 시 상세 팝업 표출
             map.on('click', 'unclustered-point', (e) => {
+                if (!e.features || !e.features.length) return;
                 const coordinates = e.features[0].geometry.coordinates.slice();
                 const props = e.features[0].properties;
                 showPopup(coordinates, props);
             });
 
-            // 마우스 커서 제어
             map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
             map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
             map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -253,19 +255,18 @@
         });
     };
 
-    // 팝업 표출 전용 함수
     function showPopup(coordinates, props) {
         if (activePopup) activePopup.remove();
 
-        const poi_nm = props.poi_nm || props.title || '이름 없음';
-        const region = (props.sido_nm || '') + ' ' + (props.sigungu_nm || '');
+        const poi_nm = getPoiName(props);
+        const region = ((props.sido_nm || '') + ' ' + (props.sigungu_nm || '')).trim();
         const category = props.mcate_cd_prefix3_nm || props.mcate_nm || '기타';
         const address = props.address || props.addr || '주소 정보 없음';
 
         const popupHtml = `
             <div class="popup-title">📍 ${poi_nm}</div>
             <div class="popup-info"><b>분류:</b> ${category}</div>
-            <div class="popup-info"><b>지역:</b> ${region.trim() || '지역 정보 없음'}</div>
+            <div class="popup-info"><b>지역:</b> ${region || '지역 정보 없음'}</div>
             <div class="popup-info"><b>주소:</b> ${address}</div>
         `;
 
@@ -281,7 +282,6 @@
     document.getElementById('send-btn').addEventListener('click', processAiCommand);
     document.getElementById('reset-btn').addEventListener('click', resetFilter);
 
-    // 필터 조건 매칭 보조 함수
     function evaluateCondition(properties, cond) {
         if (!Array.isArray(cond) || cond.length < 3) return true;
         const op = cond[0];
@@ -296,7 +296,7 @@
 
         let propVal = properties[rawPropKey];
         if (!propVal) {
-            propVal = properties['poi_nm'] || properties['sido_nm'] || properties['sigungu_nm'] || properties['mcate_cd_prefix3_nm'] || '';
+            propVal = getPoiName(properties) || properties['sido_nm'] || properties['sigungu_nm'] || properties['mcate_cd_prefix3_nm'] || '';
         }
         propVal = String(propVal);
 
@@ -327,7 +327,6 @@
             const data = await response.json();
 
             if (data.success) {
-                // 1. 검색 조건 매칭 데이터 필터링
                 currentMatchedFeatures = [];
                 if (rawGeoJsonData && rawGeoJsonData.features) {
                     currentMatchedFeatures = rawGeoJsonData.features.filter(f => {
@@ -345,28 +344,20 @@
                     });
                 }
 
-                // 2. 지도 데이터 업데이트 (검색된 지점만 표현)
                 const filteredGeoJson = {
                     type: 'FeatureCollection',
                     features: currentMatchedFeatures
                 };
 
+                // 클러스터 숨김 처리 및 포인트 개별 표출 필터 해제
                 map.setLayoutProperty('clusters', 'visibility', 'none');
                 map.setLayoutProperty('cluster-count', 'visibility', 'none');
                 map.setFilter('unclustered-point', null);
 
-                map.setPaintProperty('unclustered-point', 'circle-color', [
-                    'match',
-                    ['coalesce', ['get', 'mcate_cd_prefix3_nm'], ''],
-                    '역사/문화유산', typeColors['역사/문화유산'],
-                    '자연/휴양/관광명소', typeColors['자연/휴양/관광명소'],
-                    '여행/행사/안내', typeColors['여행/행사/안내'],
-                    typeColors['기타']
-                ]);
-
+                // 지점 데이터 갱신
                 map.getSource('my-gis-data').setData(filteredGeoJson);
 
-                // 3. ⭐️ [핵심] 검색된 점들이 하나의 화면에 꽉 차도록 카메라 경계 자동 설정 (Fit Bounds)
+                // 검색된 모든 점이 화면 한눈에 들어오도록 이동
                 if (currentMatchedFeatures.length > 0) {
                     const bounds = new maplibregl.LngLatBounds();
                     
@@ -377,7 +368,6 @@
                     });
 
                     if (currentMatchedFeatures.length === 1) {
-                        // 결과가 1개일 경우 단일 지점으로 이동
                         const singleCoords = currentMatchedFeatures[0].geometry.coordinates;
                         map.flyTo({
                             center: singleCoords,
@@ -385,15 +375,13 @@
                             essential: true
                         });
                     } else {
-                        // 결과가 여러 개일 경우 모든 점이 꽉 차게 화면 맞춤
                         map.fitBounds(bounds, {
-                            padding: { top: 80, bottom: 80, left: 400, right: 80 }, // AI 패널 위치 고려한 여백 설정
+                            padding: { top: 80, bottom: 80, left: 400, right: 80 },
                             maxZoom: 15,
                             duration: 1000
                         });
                     }
                 } else if (data.center && Array.isArray(data.center)) {
-                    // 검색 결과는 없지만 AI가 지역 좌표를 제시해 준 경우
                     map.flyTo({
                         center: data.center,
                         zoom: data.zoom || 11,
@@ -401,12 +389,12 @@
                     });
                 }
 
-                // 4. 상태창 메시지 및 전체 장소 리스트 생성
+                // 장소 리스트 UI 생성
                 let placeListHtml = '';
                 if (currentMatchedFeatures.length > 0) {
                     const listItemsHtml = currentMatchedFeatures.map((f, idx) => {
                         const props = f.properties;
-                        const poiName = props.poi_nm || props.title || '이름 없음';
+                        const poiName = getPoiName(props);
                         const category = props.mcate_cd_prefix3_nm || '기타';
                         const coords = f.geometry.coordinates;
 
@@ -442,7 +430,6 @@
         }
     }
 
-    // 장소 리스트 클릭 시 지도 이동 및 팝업 출력 함수
     function moveToLocation(lng, lat, featureIndex) {
         map.flyTo({
             center: [lng, lat],
@@ -457,7 +444,6 @@
         }
     }
 
-    // 초기화 함수
     function resetFilter() {
         if (!rawGeoJsonData) return;
 
