@@ -96,7 +96,7 @@
 <div id="map"></div>
 
 <div class="ai-container">
-    <h3>🪄 Gemini GIS 통합 AI 검색</h3>
+    <h3>생성형 AI를 이용한 관광 GIS 검색</h3>
     <div class="input-group">
         <input type="text" id="gis-command" class="ai-input" placeholder="예: 여수시의 문화유산 보여줘">
         <button id="send-btn" class="ai-btn">요청</button>
@@ -106,15 +106,14 @@
 </div>
 
 <div class="legend" id="map-legend">
-    <h4>🎨 카테고리 구분</h4>
+    <h4>관광명소 분류</h4>
 </div>
 
 <script>
     const typeColors = {
         '역사/문화유산': '#007cbf',
         '자연/휴양/관광명소': '#ff5252',
-        '여행/행사/안내': '#2ecc71',
-        '기타': '#95a5a6'
+        '여행/행사/안내': '#2ecc71'
     };
 
     const legendEl = document.getElementById('map-legend');
@@ -436,7 +435,7 @@
                     }).join('');
 
                     placeListHtml = `
-                        <div style="font-weight: bold; margin-top: 8px;">📊 검색된 장소 목록 (총 ${currentMatchedFeatures.length}곳):</div>
+                        <div style="font-weight: bold; margin-top: 8px;"> 검색된 장소 목록 (총 ${currentMatchedFeatures.length}곳):</div>
                         <ul class="place-list">${listItemsHtml}</ul>
                     `;
                 } else {
@@ -444,7 +443,7 @@
                 }
 
                 statusEl.innerHTML = `
-                    🤖 <b>AI 분석 메시지:</b><br>${data.message}<br>
+                    <b>AI 분석 메시지:</b><br>${data.message}<br>
                     ${placeListHtml}
                 `;
 
